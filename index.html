@@ -120,8 +120,10 @@
 
         /* Tier rows */
         .tier-row { margin-bottom: 16px; background: var(--panel); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); display: flex; min-height: 130px; }
-        .tier-header { width: 90px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 12px; font-weight: 700; font-size: 15px; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,0.4); word-break: break-word; }
-        .tier-games { flex: 1; padding: 12px; display: flex; gap: 10px; flex-wrap: wrap; min-height: 120px; }
+        .tier-header { width: var(--tier-header-width, 90px); flex: 0 0 var(--tier-header-width, 90px); display: flex; align-items: center; justify-content: center; padding: 12px; font-weight: 700; font-size: 15px; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,0.4); word-break: break-word; }
+        .tier-games { flex: 1; padding: 12px; display: flex; gap: 10px; flex-wrap: wrap; min-height: 120px; min-width: 0; }
+        .tier-games.horizontal-scroll { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; align-items: flex-start; }
+        .tier-row.pending-tier .tier-header { background: #555B6E !important; color: #fff !important; }
 
         /* Game Card */
         .game-card { background: var(--card); border-radius: 8px; overflow: hidden; width: var(--card-width); flex-shrink: 0; border: 1px solid transparent; cursor: grab; position: relative; transition: transform 0.15s, box-shadow 0.15s; }
@@ -134,6 +136,13 @@
         .game-info { padding: 9px 10px 10px; }
         .game-title { font-weight: 600; font-size: 12px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .game-platform { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .list-item { position: relative; }
+        .list-item.dragging { opacity: .35; }
+        .list-item.drag-before::before, .list-item.drag-after::after { content: ''; position: absolute; left: 6px; right: 6px; height: 3px; background: var(--accent); border-radius: 3px; pointer-events: none; }
+        .list-item.drag-before::before { top: -2px; }
+        .list-item.drag-after::after { bottom: -2px; }
+        .list-item.drag-into { outline: 2px solid var(--accent); outline-offset: -2px; background: rgba(139,124,255,.12); }
 
         .loading { display: none; position: fixed; top: 16px; right: 16px; background: var(--accent); color: #10121A; padding: 7px 14px; border-radius: 20px; font-size: 11px; font-weight: bold; animation: pulse 1.5s infinite; z-index: 2000; }
         @keyframes pulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
@@ -156,8 +165,9 @@
         <div class="modal-section">
             <div class="section-title">Interface</div>
             <div class="toggle-group"><input type="checkbox" id="cfg-meta"><label for="cfg-meta">Mostrar nota Metacritic nas capas</label></div>
+            <div class="input-group"><label>Layout dos jogos nas tiers</label><select id="cfg-tier-layout"><option value="Wrap">Quebrar linha</option><option value="HorizontalScroll">Scroll horizontal</option></select></div>
+            <div class="input-group"><label>Modo de navegação</label><select id="cfg-input-mode"><option value="mouse">Mouse / teclado (padrão)</option><option value="touch">Touch</option></select></div>
             <div class="input-group"><label>Fonte da Interface</label><input type="text" id="cfg-font" placeholder="Inter"></div>
-             <div class="input-group"><label>Modo de navegação</label><select id="cfg-input-mode"><option value="mouse">Mouse / teclado (padrão)</option><option value="touch">Touch</option></select></div>
         </div>
 
         <button class="btn" onclick="saveSetup()">Salvar e Recarregar</button>
@@ -225,7 +235,10 @@ let url = localStorage.getItem('supaUrl') || '';
 let key = localStorage.getItem('supaKey') || '';
 let cfgMeta = localStorage.getItem('cfgMeta') !== 'false';
 let cfgFont = localStorage.getItem('cfgFont') || 'Inter';
+let cfgTierLayout = localStorage.getItem('cfgTierLayout') || 'Wrap';
 let cfgInputMode = localStorage.getItem('cfgInputMode') || 'mouse';
+let draggedGameId = null;
+let draggedGameFromId = null;
 let cardZoom = parseInt(localStorage.getItem('cardZoom') || '140');
 
 let rootData = { Lists: [], Games: [], Settings: {} };
@@ -239,6 +252,8 @@ let dirty = false;          // há edição local ainda não enviada
 let saving = false;         // envio em andamento
 let resaveAfter = false;    // houve nova edição durante o envio
 let saveTimer = null;
+let draggedListId = null;
+let draggedListNode = null;
 
 // Toda alteração local passa por aqui: carimba, marca como pendente e salva sozinho (debounce).
 function markDirty() {
@@ -294,6 +309,7 @@ function openSetup() {
     document.getElementById('supa-key').value = key;
     document.getElementById('cfg-meta').checked = cfgMeta;
     document.getElementById('cfg-font').value = cfgFont;
+    document.getElementById('cfg-tier-layout').value = cfgTierLayout;
     const inputMode = document.getElementById('cfg-input-mode');
     if (inputMode) inputMode.value = cfgInputMode;
     document.getElementById('setup-modal').style.display = 'flex';
@@ -305,15 +321,17 @@ function saveSetup() {
     key = document.getElementById('supa-key').value.trim();
     cfgMeta = document.getElementById('cfg-meta').checked;
     cfgFont = document.getElementById('cfg-font').value.trim() || 'Inter';
+    cfgTierLayout = document.getElementById('cfg-tier-layout').value || 'Wrap';
     cfgInputMode = document.getElementById('cfg-input-mode').value === 'touch' ? 'touch' : 'mouse';
     localStorage.setItem('supaUrl', url);
     localStorage.setItem('supaKey', key);
     localStorage.setItem('cfgMeta', cfgMeta);
     localStorage.setItem('cfgFont', cfgFont);
+    localStorage.setItem('cfgTierLayout', cfgTierLayout);
     localStorage.setItem('cfgInputMode', cfgInputMode);
+    if (rootData && rootData.Settings) rootData.Settings.TierLayoutMode = cfgTierLayout;
     applySettings();
     document.getElementById('setup-modal').style.display = 'none';
-    if (currentListId) selectList(currentListId, true);
     if (url && key) loadData(false);
 }
 
@@ -349,6 +367,10 @@ async function loadData(isAuto) {
 
             const raw = typeof data[0].lists_json === 'string' ? data[0].lists_json : JSON.stringify(data[0].lists_json);
             let parsed = typeof data[0].lists_json === 'string' ? JSON.parse(data[0].lists_json) : data[0].lists_json;
+            if (parsed.Settings && parsed.Settings.TierLayoutMode) {
+                cfgTierLayout = parsed.Settings.TierLayoutMode === 'HorizontalScroll' ? 'HorizontalScroll' : 'Wrap';
+                localStorage.setItem('cfgTierLayout', cfgTierLayout);
+            }
             const colorsChanged = normalizeTierColors(parsed.Lists);
 
             if (isAuto) {
@@ -506,6 +528,65 @@ function normalizeTierColors(lists) {
 // ──────────────────────────────────────────────
 // Sidebar rendering
 // ──────────────────────────────────────────────
+function clearListDragVisuals() {
+    document.querySelectorAll('.list-item.drag-before, .list-item.drag-after, .list-item.drag-into, .list-children.drag-into')
+        .forEach(el => el.classList.remove('drag-before', 'drag-after', 'drag-into'));
+}
+
+function listDropMode(item, clientY) {
+    const rect = item.getBoundingClientRect();
+    const ratio = (clientY - rect.top) / Math.max(1, rect.height);
+    if (ratio < 0.25) return 'before';
+    if (ratio > 0.75) return 'after';
+    return 'into';
+}
+
+function moveListNode(dragId, targetId, mode) {
+    if (!dragId || !targetId || dragId === targetId) return;
+
+    const dragged = getListById(rootData.Lists, dragId);
+    const target = getListById(rootData.Lists, targetId);
+    if (!dragged || !target) return;
+
+    // Never allow moving a node into one of its descendants.
+    let p = target;
+    while (p) {
+        if (p.Id === dragId) return;
+        p = findParent(rootData.Lists, p.Id);
+    }
+
+    function removeNode(lists) {
+        for (let i = 0; i < lists.length; i++) {
+            if (lists[i].Id === dragId) return lists.splice(i, 1)[0];
+            if (lists[i].Children) {
+                const found = removeNode(lists[i].Children);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    const node = removeNode(rootData.Lists);
+    if (!node) return;
+
+    if (mode === 'into') {
+        if (!target.Children) target.Children = [];
+        target.Children.push(node);
+    } else {
+        const parent = findParent(rootData.Lists, targetId);
+        const siblings = parent ? (parent.Children || (parent.Children = [])) : rootData.Lists;
+        const targetIndex = siblings.findIndex(x => x.Id === targetId);
+        if (targetIndex < 0) { rootData.Lists.push(node); }
+        else siblings.splice(mode === 'after' ? targetIndex + 1 : targetIndex, 0, node);
+    }
+
+    node._expanded = node._expanded !== false;
+    markDirty();
+    clearListDragVisuals();
+    renderSidebar();
+    if (currentListId) selectList(currentListId, true);
+}
+
 function renderSidebar() {
     const c = document.getElementById('lists-container');
     c.innerHTML = '';
@@ -519,7 +600,6 @@ function renderListGroup(lists, container, isRoot) {
 
         const item = document.createElement('div');
         item.className = 'list-item' + (currentListId === list.Id ? ' active' : '');
-         item.dataset.listId = list.Id;
         if (!isRoot) item.style.paddingLeft = '12px';
 
         item.innerHTML = `
@@ -529,15 +609,93 @@ function renderListGroup(lists, container, isRoot) {
             <div class="list-name" title="${esc(list.Name)}">${esc(list.Name)}</div>
             <div class="list-count">${countGames(list)}</div>
         `;
+        item.draggable = cfgInputMode !== 'touch';
         item.addEventListener('click', () => selectList(list.Id));
         item.addEventListener('contextmenu', e => { e.preventDefault(); showCtxMenu(e, list); });
-        item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over'); });
-        item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+
+        // Jogos podem ser soltos diretamente em qualquer lista da árvore lateral.
+        item.addEventListener('dragover', e => {
+            // Alguns browsers não expõem DataTransfer.getData() durante dragover.
+            // Por isso o card guarda a origem em variáveis de estado no dragstart.
+            const fromId = draggedGameFromId || (e.dataTransfer && e.dataTransfer.getData('text/x-from'));
+            if (!fromId || !draggedGameId || draggedListId) return;
+            const from = getListById(rootData.Lists, fromId);
+            if (!from || from.Id === list.Id || normalizeSortMode(list.SortOrder) !== 'Manual') return;
+            e.preventDefault();
+            e.stopPropagation();
+            clearListDragVisuals();
+            item.classList.add('drag-into');
+            e.dataTransfer.dropEffect = 'move';
+        });
+
         item.addEventListener('drop', e => {
-            e.preventDefault(); item.classList.remove('drag-over');
-            const gid = e.dataTransfer.getData('text/plain');
-            const fromId = e.dataTransfer.getData('text/x-from') || currentListId;
-            if (gid && fromId !== list.Id) moveGameToList(gid, fromId, list.Id);
+            const fromId = draggedGameFromId || (e.dataTransfer && e.dataTransfer.getData('text/x-from'));
+            const gid = draggedGameId || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
+            if (!fromId || !gid || draggedListId) return;
+            const from = getListById(rootData.Lists, fromId);
+            const to = getListById(rootData.Lists, list.Id);
+            if (!from || !to || normalizeSortMode(to.SortOrder) !== 'Manual') return;
+            e.preventDefault();
+            e.stopPropagation();
+            moveGameToList(gid, from.Id, to.Id);
+            clearListDragVisuals();
+            draggedGameId = null;
+            draggedGameFromId = null;
+        });
+
+        item.addEventListener('dragstart', e => {
+            draggedListId = list.Id;
+            draggedListNode = list;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/x-list-id', list.Id);
+            e.dataTransfer.setData('text/plain', list.Id);
+            item.classList.add('dragging');
+            // Use a small visual clone instead of the browser's full-page ghost.
+            const ghost = item.cloneNode(true);
+            ghost.style.cssText = 'position:absolute;top:-1000px;left:-1000px;width:' + item.offsetWidth + 'px;opacity:.65;pointer-events:none;';
+            document.body.appendChild(ghost);
+            e.dataTransfer.setDragImage(ghost, Math.min(30, item.offsetWidth / 2), 18);
+            setTimeout(() => ghost.remove(), 0);
+        });
+
+        item.addEventListener('dragover', e => {
+            if (!draggedListId || draggedListId === list.Id) return;
+            const dragged = getListById(rootData.Lists, draggedListId);
+            if (!dragged) return;
+            let p = list;
+            while (p) {
+                if (p.Id === draggedListId) return;
+                p = findParent(rootData.Lists, p.Id);
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            clearListDragVisuals();
+            const mode = listDropMode(item, e.clientY);
+            item.classList.add('drag-' + mode);
+            e.dataTransfer.dropEffect = 'move';
+        });
+
+        item.addEventListener('dragleave', e => {
+            if (!item.contains(e.relatedTarget)) item.classList.remove('drag-before', 'drag-after', 'drag-into');
+        });
+
+        item.addEventListener('drop', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!draggedListId) return;
+            const mode = listDropMode(item, e.clientY);
+            const id = draggedListId;
+            clearListDragVisuals();
+            draggedListId = null;
+            draggedListNode = null;
+            moveListNode(id, list.Id, mode);
+        });
+
+        item.addEventListener('dragend', () => {
+            item.classList.remove('dragging');
+            clearListDragVisuals();
+            draggedListId = null;
+            draggedListNode = null;
         });
         container.appendChild(item);
 
@@ -731,14 +889,55 @@ function generateCard(id) {
 
 function initCardDrag() {
     document.querySelectorAll('.game-card').forEach(c => {
-        if (cfgInputMode === 'touch') { c.draggable = false; return; }
-        c.draggable = true;
         c.addEventListener('dragstart', e => {
             const holder = c.closest('[data-list-id]');
-            e.dataTransfer.setData('text/x-from', holder ? holder.dataset.listId : currentListId);
+            draggedGameId = c.dataset.id || null;
+            draggedGameFromId = holder ? holder.dataset.listId : currentListId;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/x-from', draggedGameFromId || '');
+            e.dataTransfer.setData('text/plain', draggedGameId || '');
+            c.classList.add('dragging');
+        });
+        c.addEventListener('dragend', () => {
+            c.classList.remove('dragging');
+            draggedGameId = null;
+            draggedGameFromId = null;
+            clearListDragVisuals();
         });
     });
 }
+
+
+// Todas as linhas da Tier List usam a largura do maior nome.
+function updateTierHeaderWidth() {
+    const area = document.getElementById('content-area');
+    if (!area) return;
+    const headers = Array.from(area.querySelectorAll('.tier-header'));
+    if (!headers.length) {
+        area.style.removeProperty('--tier-header-width');
+        return;
+    }
+
+    // Mede o texto sem depender da largura atual do próprio header.
+    // Isso evita a circularidade do scrollWidth quando o texto está com
+    // word-break/break-word e o header já recebeu a largura anterior.
+    const canvas = updateTierHeaderWidth._canvas || (updateTierHeaderWidth._canvas = document.createElement('canvas'));
+    const ctx = canvas.getContext('2d');
+    let max = 90;
+    headers.forEach(h => {
+        const cs = getComputedStyle(h);
+        ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const text = h.textContent.trim();
+        const measured = Math.ceil(ctx.measureText(text).width + parseFloat(cs.paddingLeft || 0) + parseFloat(cs.paddingRight || 0) + 2);
+        max = Math.max(max, measured);
+    });
+    area.style.setProperty('--tier-header-width', `${max}px`);
+}
+
+
+window.addEventListener('resize', () => {
+    requestAnimationFrame(updateTierHeaderWidth);
+});
 
 // ──────────────────────────────────────────────
 // Select & render list
@@ -786,13 +985,14 @@ function selectList(id, preserveSearch = false) {
         list.Children.forEach(child => {
             const row = document.createElement('div');
             row.className = 'tier-row';
+            const gamesClass = cfgTierLayout === 'HorizontalScroll' ? 'tier-games horizontal-scroll' : 'tier-games';
             row.innerHTML = `<div class="tier-header" style="background:${child.HexColor || '#444'};color:${isDark(child.HexColor) ? '#fff' : '#111'}">${esc(child.Name)}</div>
-                             <div class="tier-games" data-list-id="${child.Id}">${getSortedGameIds(child, tierSortMode).map(generateCard).join('')}</div>`;
+                             <div class="${gamesClass}" data-list-id="${child.Id}">${getSortedGameIds(child, tierSortMode).map(generateCard).join('')}</div>`;
             area.appendChild(row);
             const sg = new Sortable(row.querySelector('.tier-games'), {
                 group: { name: 'tier', pull: true, put: tierSortMode === 'Manual' },
                 animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
-                disabled: tierSortMode !== 'Manual' || cfgInputMode === 'touch',
+                disabled: tierSortMode !== 'Manual',
                 setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
                 onEnd: evt => {
                     if (evt.from === evt.to && evt.oldIndex === evt.newIndex) return;
@@ -822,6 +1022,45 @@ function selectList(id, preserveSearch = false) {
             });
             sortables.push(sg);
         });
+
+        // Jogos que pertencem diretamente à lista-mãe aparecem como uma tier especial
+        // de pendentes, sempre por último, e podem ser arrastados para qualquer sublista.
+        if ((list.GameIds || []).length) {
+            const row = document.createElement('div');
+            row.className = 'tier-row pending-tier';
+            const gamesClass = cfgTierLayout === 'HorizontalScroll' ? 'tier-games horizontal-scroll' : 'tier-games';
+            row.innerHTML = `<div class="tier-header">Pendentes</div>
+                             <div class="${gamesClass}" data-list-id="${list.Id}">${getSortedGameIds(list, tierSortMode).map(generateCard).join('')}</div>`;
+            area.appendChild(row);
+            const sg = new Sortable(row.querySelector('.tier-games'), {
+                group: { name: 'tier', pull: true, put: tierSortMode === 'Manual' },
+                animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
+                disabled: tierSortMode !== 'Manual',
+                setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
+                onEnd: evt => {
+                    if (evt.from === evt.to && evt.oldIndex === evt.newIndex) return;
+                    const gid = evt.item.dataset.id;
+                    const fromId = evt.from.dataset.listId;
+                    const toId = evt.to.dataset.listId;
+                    const from = getListById(rootData.Lists, fromId);
+                    const to = getListById(rootData.Lists, toId);
+                    if (!from || !to) return;
+                    const oldIndex = (from.GameIds || []).indexOf(gid);
+                    if (oldIndex >= 0) from.GameIds.splice(oldIndex, 1);
+                    if (!to.GameIds) to.GameIds = [];
+                    const nextEl = evt.to.children[evt.newIndex + 1];
+                    const nextId = nextEl ? nextEl.dataset.id : null;
+                    let insertIndex = nextId ? to.GameIds.indexOf(nextId) : to.GameIds.length;
+                    if (insertIndex < 0) insertIndex = to.GameIds.length;
+                    to.GameIds.splice(insertIndex, 0, gid);
+                    markDirty();
+                    renderSidebar();
+                    document.getElementById('header-count').textContent = `${countGames(getListById(rootData.Lists, currentListId))} jogos`;
+                    selectList(currentListId, true);
+                }
+            });
+            sortables.push(sg);
+        }
     } else {
         // Normal grid — collect all GameIds (own + children) if it's a parent list
         let ids = list.GameIds || [];
@@ -833,7 +1072,7 @@ function selectList(id, preserveSearch = false) {
         area.appendChild(grid);
         const sg = new Sortable(grid, {
             animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
-            disabled: normalizeSortMode(list.SortOrder) !== 'Manual' || cfgInputMode === 'touch',
+            disabled: normalizeSortMode(list.SortOrder) !== 'Manual',
             setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
             onEnd: evt => {
                 if (evt.oldIndex === evt.newIndex) return;
@@ -851,6 +1090,7 @@ function selectList(id, preserveSearch = false) {
         sortables.push(sg);
     }
     initCardDrag();
+    requestAnimationFrame(updateTierHeaderWidth);
 }
 
 function isDark(hex) {
@@ -876,9 +1116,9 @@ function moveGameToList(gid, fromId, toId) {
     to.GameIds.push(gid);
     markDirty();
     selectList(currentListId);
+    requestAnimationFrame(updateTierHeaderWidth);
 }
 
-// ──────────────────────────────────────────────
 // Touch navigation / drag
 // ──────────────────────────────────────────────
 let touchDrag = null;
@@ -1177,6 +1417,7 @@ function installTouchNavigation() {
 }
 
 installTouchNavigation();
+
 
 // ──────────────────────────────────────────────
 // Save to Supabase
