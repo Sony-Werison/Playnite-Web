@@ -99,21 +99,18 @@
         .actions { display: flex; gap: 10px; align-items: center; }
         .current-search { width: 190px; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); outline: none; font-family: inherit; font-size: 12px; }
         .current-search:focus { border-color: var(--accent); }
-        .sort-select { padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); outline: none; font-family: inherit; font-size: 12px; }
+        .sort-select, .interaction-select { padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); outline: none; font-family: inherit; font-size: 12px; }
+        .interaction-select { min-width: 118px; }
         .sortable-ghost { opacity: 0.32 !important; }
         .sortable-chosen { box-shadow: 0 0 0 2px var(--accent-soft); }
-        /* Touch mode: só é ativado quando o usuário escolhe Touch nas configurações.
-           O modo padrão (mouse/teclado) permanece visual e comportamentalmente igual. */
-        body.touch-mode { -webkit-tap-highlight-color: transparent; }
-        body.touch-mode .game-card { cursor: grab; user-select: none; -webkit-user-select: none; }
-        body.touch-mode .list-item { user-select: none; -webkit-user-select: none; }
-        body.touch-mode .content-area { overscroll-behavior: contain; }
-        body.touch-mode .sidebar, body.touch-mode .lists-container { overscroll-behavior: contain; }
-        .touch-drag-ghost { position: fixed; z-index: 3000; pointer-events: none; opacity: .82; transform: translate(-50%, -50%) scale(.96); box-shadow: 0 16px 36px rgba(0,0,0,.45); border-radius: 8px; }
-        .touch-drop-line { position: fixed; z-index: 2999; pointer-events: none; height: 3px; background: var(--accent); border-radius: 3px; box-shadow: 0 0 8px rgba(139,124,255,.55); display: none; }
-        .touch-drag-active { cursor: grabbing !important; }
-        .touch-source-hidden { opacity: .18 !important; }
-        body.touch-mode.touch-dragging * { touch-action: none !important; }
+        /* Modos de interação */
+        body.view-only .game-card { cursor: default; }
+        body.view-only .sortable-chosen, body.view-only .sortable-ghost { box-shadow: none !important; }
+        body.click-move-active { cursor: grabbing; }
+        .click-move-ghost { position: fixed; z-index: 3000; pointer-events: none; opacity: .82; transform: translate(-50%, -50%) scale(.96); box-shadow: 0 16px 36px rgba(0,0,0,.45); border-radius: 8px; }
+        .click-move-source { opacity: .18 !important; }
+        .click-move-target { outline: 2px solid var(--accent) !important; outline-offset: -2px; }
+        .click-move-line { position: fixed; z-index: 2999; pointer-events: none; background: var(--accent); border-radius: 3px; box-shadow: 0 0 8px rgba(139,124,255,.55); display: none; }
 
         .zoom-slider { width: 90px; }
         .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); padding: 7px 14px; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 12px; }
@@ -126,7 +123,7 @@
 
         /* Tier rows */
         .tier-row { margin-bottom: 16px; background: var(--panel); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); display: flex; min-height: 130px; }
-        .tier-header { width: var(--tier-header-width, 90px); flex: 0 0 var(--tier-header-width, 90px); display: flex; align-items: center; justify-content: center; padding: 12px; font-weight: 700; font-size: 15px; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,0.4); word-break: break-word; }
+        .tier-header { width: var(--tier-header-width, 40px); flex: 0 0 var(--tier-header-width, 40px); display: flex; align-items: center; justify-content: center; padding: clamp(4px, calc(var(--card-width) * 0.08), 12px); font-weight: 700; font-size: clamp(10px, calc(var(--card-width) * 0.11), 15px); text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,0.4); word-break: break-word; }
         .tier-games { flex: 1; padding: 12px; display: flex; gap: 10px; flex-wrap: wrap; min-height: 120px; min-width: 0; }
         .tier-games.horizontal-scroll { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; align-items: flex-start; }
         .tier-row.pending-tier .tier-header { background: #555B6E !important; color: #fff !important; }
@@ -171,8 +168,9 @@
         <div class="modal-section">
             <div class="section-title">Interface</div>
             <div class="toggle-group"><input type="checkbox" id="cfg-meta"><label for="cfg-meta">Mostrar nota Metacritic nas capas</label></div>
+            <div class="toggle-group"><input type="checkbox" id="cfg-game-names"><label for="cfg-game-names">Mostrar nomes dos jogos</label></div>
+            <div class="toggle-group"><input type="checkbox" id="cfg-game-source"><label for="cfg-game-source">Mostrar biblioteca/origem</label></div>
             <div class="input-group"><label>Layout dos jogos nas tiers</label><select id="cfg-tier-layout"><option value="Wrap">Quebrar linha</option><option value="HorizontalScroll">Scroll horizontal</option></select></div>
-            <div class="input-group"><label>Modo de navegação</label><select id="cfg-input-mode"><option value="mouse">Mouse / teclado (padrão)</option><option value="touch">Touch</option></select></div>
             <div class="input-group"><label>Fonte da Interface</label><input type="text" id="cfg-font" placeholder="Inter"></div>
         </div>
 
@@ -229,7 +227,12 @@
                 <option value="Metacritic">Metacritic</option>
             </select>
             <button class="btn-outline" id="btn-tier-toggle" onclick="toggleTierList()" style="display:none">⊞ Tier List</button>
-            <input type="range" class="zoom-slider" id="zoom-slider" min="80" max="240" value="140" oninput="changeZoom(this.value)" title="Zoom das capas">
+            <select class="interaction-select" id="interaction-mode" onchange="changeInteractionMode(this.value)" title="Modo de interação">
+                <option value="drag">Arrastar</option>
+                <option value="double">Clique duplo</option>
+                <option value="view">Visualização</option>
+            </select>
+            <input type="range" class="zoom-slider" id="zoom-slider" min="40" max="240" value="140" oninput="changeZoom(this.value)" title="Zoom das capas">
             <button class="btn-outline" onclick="syncToSupabase()">💾 Salvar</button>
         </div>
     </div>
@@ -243,13 +246,15 @@ const TIER_PALETTE = ['#FF7F7F','#FFBF7F','#FFDF7F','#FFFF7F','#BFFF7F','#7FFF7F
 let url = localStorage.getItem('supaUrl') || '';
 let key = localStorage.getItem('supaKey') || '';
 let cfgMeta = localStorage.getItem('cfgMeta') !== 'false';
+let cfgGameNames = localStorage.getItem('cfgGameNames') !== 'false';
+let cfgGameSource = localStorage.getItem('cfgGameSource') !== 'false';
 let cfgFont = localStorage.getItem('cfgFont') || 'Inter';
 let cfgTierLayout = localStorage.getItem('cfgTierLayout') || 'Wrap';
-let cfgInputMode = localStorage.getItem('cfgInputMode') || 'mouse';
+let cfgInteractionMode = localStorage.getItem('cfgInteractionMode') || (localStorage.getItem('cfgInputMode') === 'touch' ? 'view' : 'drag');
 let sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
 let draggedGameId = null;
 let draggedGameFromId = null;
-let cardZoom = parseInt(localStorage.getItem('cardZoom') || '140');
+let cardZoom = Math.max(40, Math.min(240, parseInt(localStorage.getItem('cardZoom') || '140') || 140));
 
 let rootData = { Lists: [], Games: [], Settings: {} };
 let gamesMap = {};
@@ -289,16 +294,32 @@ function applySettings() {
     }
     document.documentElement.style.setProperty('--card-width', `${cardZoom}px`);
     document.getElementById('zoom-slider').value = cardZoom;
-    document.body.classList.toggle('touch-mode', cfgInputMode === 'touch');
+    document.body.classList.toggle('view-only', cfgInteractionMode === 'view');
+    document.body.classList.toggle('double-move-mode', cfgInteractionMode === 'double');
     applySidebarState();
-    const inputMode = document.getElementById('cfg-input-mode');
-    if (inputMode) inputMode.value = cfgInputMode;
+    const interactionMode = document.getElementById('interaction-mode');
+    if (interactionMode) interactionMode.value = cfgInteractionMode;
+    const sortSelect = document.getElementById('sort-select');
+    const tierToggle = document.getElementById('btn-tier-toggle');
+    if (sortSelect) sortSelect.disabled = cfgInteractionMode === 'view';
+    if (tierToggle) tierToggle.disabled = cfgInteractionMode === 'view';
+}
+
+function changeInteractionMode(mode) {
+    if (!['drag', 'double', 'view'].includes(mode)) mode = 'drag';
+    cfgInteractionMode = mode;
+    localStorage.setItem('cfgInteractionMode', cfgInteractionMode);
+    applySettings();
+    // O modo pode alterar draggable/Sortable e os listeners de clique duplo.
+    if (currentListId) selectList(currentListId, true);
 }
 
 function changeZoom(v) {
-    cardZoom = parseInt(v);
-    document.documentElement.style.setProperty('--card-width', `${v}px`);
-    localStorage.setItem('cardZoom', v);
+    cardZoom = Math.max(40, Math.min(240, parseInt(v) || 140));
+    document.documentElement.style.setProperty('--card-width', `${cardZoom}px`);
+    localStorage.setItem('cardZoom', cardZoom);
+    const slider = document.getElementById('zoom-slider');
+    if (slider) slider.value = cardZoom;
 }
 
 // Init
@@ -319,10 +340,10 @@ function openSetup() {
     document.getElementById('supa-url').value = url;
     document.getElementById('supa-key').value = key;
     document.getElementById('cfg-meta').checked = cfgMeta;
+    document.getElementById('cfg-game-names').checked = cfgGameNames;
+    document.getElementById('cfg-game-source').checked = cfgGameSource;
     document.getElementById('cfg-font').value = cfgFont;
     document.getElementById('cfg-tier-layout').value = cfgTierLayout;
-    const inputMode = document.getElementById('cfg-input-mode');
-    if (inputMode) inputMode.value = cfgInputMode;
     document.getElementById('setup-modal').style.display = 'flex';
     document.getElementById('close-setup').style.display = 'block';
 }
@@ -331,16 +352,24 @@ function saveSetup() {
     url = document.getElementById('supa-url').value.trim();
     key = document.getElementById('supa-key').value.trim();
     cfgMeta = document.getElementById('cfg-meta').checked;
+    cfgGameNames = document.getElementById('cfg-game-names').checked;
+    cfgGameSource = document.getElementById('cfg-game-source').checked;
     cfgFont = document.getElementById('cfg-font').value.trim() || 'Inter';
     cfgTierLayout = document.getElementById('cfg-tier-layout').value || 'Wrap';
-    cfgInputMode = document.getElementById('cfg-input-mode').value === 'touch' ? 'touch' : 'mouse';
     localStorage.setItem('supaUrl', url);
     localStorage.setItem('supaKey', key);
     localStorage.setItem('cfgMeta', cfgMeta);
+    localStorage.setItem('cfgGameNames', cfgGameNames);
+    localStorage.setItem('cfgGameSource', cfgGameSource);
     localStorage.setItem('cfgFont', cfgFont);
     localStorage.setItem('cfgTierLayout', cfgTierLayout);
-    localStorage.setItem('cfgInputMode', cfgInputMode);
-    if (rootData && rootData.Settings) rootData.Settings.TierLayoutMode = cfgTierLayout;
+    localStorage.setItem('cfgInteractionMode', cfgInteractionMode);
+    localStorage.removeItem('cfgInputMode');
+    if (rootData && rootData.Settings) {
+        rootData.Settings.TierLayoutMode = cfgTierLayout;
+        rootData.Settings.ShowGameNames = cfgGameNames;
+        rootData.Settings.ShowGameSource = cfgGameSource;
+    }
     applySettings();
     document.getElementById('setup-modal').style.display = 'none';
     if (url && key) loadData(false);
@@ -395,6 +424,12 @@ async function loadData(isAuto) {
             const expanded = collectExpanded(rootData.Lists);
             const scrollTop = document.getElementById('content-area').scrollTop;
             rootData = parsed;
+            if (!localStorage.getItem('cfgGameNames') && rootData.Settings && rootData.Settings.ShowGameNames !== undefined) {
+                cfgGameNames = rootData.Settings.ShowGameNames !== false;
+            }
+            if (!localStorage.getItem('cfgGameSource') && rootData.Settings && rootData.Settings.ShowGameSource !== undefined) {
+                cfgGameSource = rootData.Settings.ShowGameSource !== false;
+            }
             applyExpanded(rootData.Lists, expanded);
             gamesMap = {};
             (rootData.Games || []).forEach(g => gamesMap[g.Id] = g);
@@ -515,6 +550,7 @@ function changeCurrentSearch(value) {
 }
 
 function changeSortMode(value) {
+    if (cfgInteractionMode === 'view') return;
     const list = getListById(rootData.Lists, currentListId);
     if (!list) return;
     list.SortOrder = value;
@@ -553,6 +589,7 @@ function listDropMode(item, clientY) {
 }
 
 function moveListNode(dragId, targetId, mode) {
+    if (cfgInteractionMode !== 'drag') return;
     if (!dragId || !targetId || dragId === targetId) return;
 
     const dragged = getListById(rootData.Lists, dragId);
@@ -628,6 +665,7 @@ function renderListGroup(lists, container, isRoot) {
 
         const item = document.createElement('div');
         item.className = 'list-item' + (currentListId === list.Id ? ' active' : '');
+        item.dataset.listId = list.Id;
         if (!isRoot) item.style.paddingLeft = '12px';
 
         item.innerHTML = `
@@ -637,12 +675,13 @@ function renderListGroup(lists, container, isRoot) {
             <div class="list-name" title="${esc(list.Name)}">${esc(list.Name)}</div>
             <div class="list-count">${countGames(list)}</div>
         `;
-        item.draggable = cfgInputMode !== 'touch';
+        item.draggable = cfgInteractionMode === 'drag';
         item.addEventListener('click', () => selectList(list.Id));
         item.addEventListener('contextmenu', e => { e.preventDefault(); showCtxMenu(e, list); });
 
         // Jogos podem ser soltos diretamente em qualquer lista da árvore lateral.
         item.addEventListener('dragover', e => {
+            if (cfgInteractionMode !== 'drag') return;
             // Alguns browsers não expõem DataTransfer.getData() durante dragover.
             // Por isso o card guarda a origem em variáveis de estado no dragstart.
             const fromId = draggedGameFromId || (e.dataTransfer && e.dataTransfer.getData('text/x-from'));
@@ -657,6 +696,7 @@ function renderListGroup(lists, container, isRoot) {
         });
 
         item.addEventListener('drop', e => {
+            if (cfgInteractionMode !== 'drag') return;
             const fromId = draggedGameFromId || (e.dataTransfer && e.dataTransfer.getData('text/x-from'));
             const gid = draggedGameId || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
             if (!fromId || !gid || draggedListId) return;
@@ -672,6 +712,7 @@ function renderListGroup(lists, container, isRoot) {
         });
 
         item.addEventListener('dragstart', e => {
+            if (cfgInteractionMode !== 'drag') { e.preventDefault(); return; }
             draggedListId = list.Id;
             draggedListNode = list;
             e.dataTransfer.effectAllowed = 'move';
@@ -687,6 +728,7 @@ function renderListGroup(lists, container, isRoot) {
         });
 
         item.addEventListener('dragover', e => {
+            if (cfgInteractionMode !== 'drag') return;
             if (!draggedListId || draggedListId === list.Id) return;
             const dragged = getListById(rootData.Lists, draggedListId);
             if (!dragged) return;
@@ -708,6 +750,7 @@ function renderListGroup(lists, container, isRoot) {
         });
 
         item.addEventListener('drop', e => {
+            if (cfgInteractionMode !== 'drag') return;
             e.preventDefault();
             e.stopPropagation();
             if (!draggedListId) return;
@@ -754,6 +797,7 @@ function toggleExpand(id) {
 // Context menu (right-click on list)
 // ──────────────────────────────────────────────
 function showCtxMenu(e, list) {
+    if (cfgInteractionMode === 'view') return;
     e.stopPropagation();
     const menu = document.getElementById('ctx-menu');
     menu.innerHTML = '';
@@ -905,18 +949,20 @@ function generateCard(id) {
     }
     const src = g.Source || g.Platform || '';
 
-    return `<div class="game-card" data-id="${id}" draggable="true">
+    return `<div class="game-card" data-id="${id}" draggable="${cfgInteractionMode === 'drag'}">
         <div class="game-cover" ${bgStyle}>${g.CoverUrl ? '' : esc(initial)}</div>
         ${meta}
-        <div class="game-info">
-            <div class="game-title" title="${esc(g.Name)}">${esc(g.Name)}</div>
-            <div class="game-platform">${esc(src)}</div>
-        </div>
+        ${(cfgGameNames || cfgGameSource) ? `<div class="game-info">
+            ${cfgGameNames ? `<div class="game-title" title="${esc(g.Name)}">${esc(g.Name)}</div>` : ''}
+            ${cfgGameSource ? `<div class="game-platform">${esc(src)}</div>` : ''}
+        </div>` : ''}
     </div>`;
 }
 
 function initCardDrag() {
     document.querySelectorAll('.game-card').forEach(c => {
+        c.draggable = cfgInteractionMode === 'drag';
+        if (cfgInteractionMode !== 'drag') return;
         c.addEventListener('dragstart', e => {
             const holder = c.closest('[data-list-id]');
             draggedGameId = c.dataset.id || null;
@@ -933,8 +979,8 @@ function initCardDrag() {
             clearListDragVisuals();
         });
     });
+    initDoubleClickMove();
 }
-
 
 // Todas as linhas da Tier List usam a largura do maior nome.
 function updateTierHeaderWidth() {
@@ -951,7 +997,9 @@ function updateTierHeaderWidth() {
     // word-break/break-word e o header já recebeu a largura anterior.
     const canvas = updateTierHeaderWidth._canvas || (updateTierHeaderWidth._canvas = document.createElement('canvas'));
     const ctx = canvas.getContext('2d');
-    let max = 90;
+    const cardW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-width')) || 140;
+    const minHeader = Math.max(40, Math.min(90, Math.round(cardW * 0.9)));
+    let max = minHeader;
     headers.forEach(h => {
         const cs = getComputedStyle(h);
         ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
@@ -1039,7 +1087,7 @@ function selectList(id, preserveSearch = false) {
             const sg = new Sortable(row.querySelector('.tier-games'), {
                 group: { name: 'tier', pull: true, put: tierSortMode === 'Manual' },
                 animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
-                disabled: tierSortMode !== 'Manual',
+                disabled: tierSortMode !== 'Manual' || cfgInteractionMode !== 'drag',
                 setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
                 onEnd: evt => {
                     if (evt.from === evt.to && evt.oldIndex === evt.newIndex) return;
@@ -1082,7 +1130,7 @@ function selectList(id, preserveSearch = false) {
             const sg = new Sortable(row.querySelector('.tier-games'), {
                 group: { name: 'tier', pull: true, put: tierSortMode === 'Manual' },
                 animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
-                disabled: tierSortMode !== 'Manual',
+                disabled: tierSortMode !== 'Manual' || cfgInteractionMode !== 'drag',
                 setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
                 onEnd: evt => {
                     if (evt.from === evt.to && evt.oldIndex === evt.newIndex) return;
@@ -1119,7 +1167,7 @@ function selectList(id, preserveSearch = false) {
         area.appendChild(grid);
         const sg = new Sortable(grid, {
             animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
-            disabled: normalizeSortMode(list.SortOrder) !== 'Manual',
+            disabled: normalizeSortMode(list.SortOrder) !== 'Manual' || cfgInteractionMode !== 'drag',
             setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
             onEnd: evt => {
                 if (evt.oldIndex === evt.newIndex) return;
@@ -1150,6 +1198,7 @@ function isDark(hex) {
 }
 
 function toggleTierList() {
+    if (cfgInteractionMode === 'view') return;
     const list = getListById(rootData.Lists, currentListId);
     if (!list) return;
     list.IsTier = !list.IsTier;
@@ -1158,6 +1207,7 @@ function toggleTierList() {
 }
 
 function moveGameToList(gid, fromId, toId) {
+    if (cfgInteractionMode !== 'drag') return;
     const from = getListById(rootData.Lists, fromId);
     const to   = getListById(rootData.Lists, toId);
     if (!from || !to) return;
@@ -1169,251 +1219,211 @@ function moveGameToList(gid, fromId, toId) {
     requestAnimationFrame(updateTierHeaderWidth);
 }
 
-// Touch navigation / drag
+// Modo de clique duplo para mover jogos
 // ──────────────────────────────────────────────
-// O gesto touch segue o comportamento de Android/iOS: tocar e mover = scroll;
-// segurar sem mover por um tempo = inicia o rearranjo. O timer é global para não
-// desaparecer quando o dedo sai do card durante um scroll.
-let touchDrag = null;
-let touchSuppressClickUntil = 0;
-let touchInitialized = false;
-let touchPending = null;
+// O primeiro duplo clique coloca o jogo em "modo de transporte". O próximo
+// clique em um destino válido confirma a movimentação. Cliques inválidos ou
+// no próprio jogo não alteram nada e mantêm o transporte ativo.
+let clickMove = null;
+let clickMoveInitialized = false;
 
-function touchPoint(e) { return { x: e.clientX, y: e.clientY }; }
-function isTouchMode() { return cfgInputMode === 'touch'; }
-
-function clearTouchDropIndicator() {
-    const line = document.getElementById('touch-drop-line');
-    if (line) line.style.display = 'none';
-}
-
-function ensureTouchOverlay() {
-    if (!document.getElementById('touch-drop-line')) {
-        const line = document.createElement('div');
-        line.id = 'touch-drop-line';
-        line.className = 'touch-drop-line';
-        document.body.appendChild(line);
-    }
-}
-
-function showTouchDropLine(rect, after = false) {
-    ensureTouchOverlay();
-    const line = document.getElementById('touch-drop-line');
-    line.style.display = 'block';
-    line.style.left = Math.max(0, rect.left - 2) + 'px';
-    line.style.width = Math.max(8, rect.width + 4) + 'px';
-    line.style.top = (after ? rect.bottom - 2 : rect.top - 2) + 'px';
-}
-
-function createTouchGhost(source) {
-    const ghost = source.cloneNode(true);
-    ghost.classList.add('touch-drag-ghost');
-    const r = source.getBoundingClientRect();
-    ghost.style.width = r.width + 'px';
-    ghost.style.height = r.height + 'px';
+function createClickMoveGhost(card) {
+    const ghost = card.cloneNode(true);
+    ghost.classList.remove('dragging', 'sortable-chosen', 'sortable-ghost');
+    ghost.classList.add('click-move-ghost');
+    ghost.style.width = card.getBoundingClientRect().width + 'px';
     document.body.appendChild(ghost);
     return ghost;
 }
 
-function startTouchGameDrag(card, p, pointerId) {
+function ensureClickMoveLine() {
+    let line = document.getElementById('click-move-line');
+    if (!line) {
+        line = document.createElement('div');
+        line.id = 'click-move-line';
+        line.className = 'click-move-line';
+        document.body.appendChild(line);
+    }
+    return line;
+}
+
+function clearClickMoveVisuals() {
+    const line = document.getElementById('click-move-line');
+    if (line) line.style.display = 'none';
+    document.querySelectorAll('.click-move-source, .click-move-target').forEach(el => {
+        el.classList.remove('click-move-source', 'click-move-target');
+    });
+}
+
+function startDoubleClickMove(card, e) {
+    if (cfgInteractionMode !== 'double' || clickMove) return;
     const holder = card.closest('[data-list-id]');
-    if (!holder) return false;
+    if (!holder) return;
     const sourceId = holder.dataset.listId;
     const source = getListById(rootData.Lists, sourceId);
-    if (!source || normalizeSortMode(source.SortOrder) !== 'Manual') return false;
-    touchDrag = { type:'game', id:card.dataset.id, sourceId, pointerId,
-        startX:p.x, startY:p.y, ghost:createTouchGhost(card), targetId:null,
-        sourceTargetListId:sourceId, after:false };
-    document.body.classList.add('touch-dragging');
-    card.classList.add('touch-source-hidden');
-    touchDrag.ghost.style.left = p.x + 'px';
-    touchDrag.ghost.style.top = p.y + 'px';
-    try { card.setPointerCapture(pointerId); } catch (_) {}
-    return true;
+    if (!source || normalizeSortMode(source.SortOrder) !== 'Manual') return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    const ghost = createClickMoveGhost(card);
+    const r = card.getBoundingClientRect();
+    clickMove = { id: card.dataset.id, sourceId, ghost, sourceCard: card };
+    card.classList.add('click-move-source');
+    ghost.style.left = (e.clientX || (r.left + r.width / 2)) + 'px';
+    ghost.style.top = (e.clientY || (r.top + r.height / 2)) + 'px';
+    document.body.classList.add('click-move-active');
 }
 
-function startTouchListDrag(item, list, p, pointerId) {
-    touchDrag = { type:'list', id:list.Id, pointerId, startX:p.x, startY:p.y,
-        ghost:createTouchGhost(item), targetId:null, position:null };
-    document.body.classList.add('touch-dragging');
-    item.classList.add('touch-source-hidden');
-    touchDrag.ghost.style.left = p.x + 'px';
-    touchDrag.ghost.style.top = p.y + 'px';
-    try { item.setPointerCapture(pointerId); } catch (_) {}
-    return true;
+function cancelDoubleClickMove() {
+    if (!clickMove) return;
+    if (clickMove.ghost) clickMove.ghost.remove();
+    clearClickMoveVisuals();
+    document.body.classList.remove('click-move-active');
+    clickMove = null;
 }
 
-function autoScrollTouchTier(p) {
-    const el = document.elementFromPoint(p.x, p.y);
-    const tier = el && el.closest ? el.closest('.tier-games.horizontal-scroll') : null;
-    if (!tier) return;
-    const r = tier.getBoundingClientRect();
-    const edge = Math.min(90, Math.max(45, r.width * .16));
-    if (p.x > r.right - edge) {
-        tier.scrollLeft += Math.max(8, Math.round((p.x - (r.right-edge)) * .45));
-    } else if (p.x < r.left + edge) {
-        tier.scrollLeft -= Math.max(8, Math.round(((r.left+edge)-p.x) * .45));
-    }
-}
+function getGameMoveTarget(x, y) {
+    if (!clickMove) return null;
+    const el = document.elementFromPoint(x, y);
+    if (!el) return null;
 
-function updateTouchGameTarget(p) {
-    clearTouchDropIndicator();
-    document.querySelectorAll('.list-item.drag-over').forEach(x => x.classList.remove('drag-over'));
-    autoScrollTouchTier(p);
-    const el = document.elementFromPoint(p.x, p.y);
-    const card = el && el.closest ? el.closest('.game-card') : null;
-    const sidebarItem = el && el.closest ? el.closest('.list-item') : null;
-    const holder = el && el.closest ? el.closest('[data-list-id]') : null;
-    const targetListId = holder ? holder.dataset.listId : (sidebarItem ? findListIdFromSidebarItem(sidebarItem) : null);
-    if (!targetListId) return;
-    const targetList = getListById(rootData.Lists, targetListId);
-    if (!targetList || normalizeSortMode(targetList.SortOrder) !== 'Manual') return;
+    const card = el.closest ? el.closest('.game-card') : null;
+    const sidebarItem = el.closest ? el.closest('.list-item') : null;
+    const holder = el.closest ? el.closest('[data-list-id]') : null;
 
-    if (sidebarItem) {
-        touchDrag.targetId = null;
-        touchDrag.sourceTargetListId = targetListId;
-        touchDrag.after = false;
-        sidebarItem.classList.add('drag-over');
-        return;
+    if (sidebarItem && !card) {
+        const targetId = sidebarItem.dataset.listId;
+        const target = getListById(rootData.Lists, targetId);
+        if (!target || targetId === clickMove.sourceId || normalizeSortMode(target.SortOrder) !== 'Manual') return null;
+        return { toId: targetId, targetId: null, after: false };
     }
 
-    if (card && card.dataset.id !== touchDrag.id) {
+    if (!holder) return null;
+    const toId = holder.dataset.listId;
+    const to = getListById(rootData.Lists, toId);
+    if (!to || normalizeSortMode(to.SortOrder) !== 'Manual') return null;
+
+    if (card) {
+        const targetId = card.dataset.id;
+        if (!targetId || targetId === clickMove.id) return null;
         const r = card.getBoundingClientRect();
-        // Em layout horizontal, a linha vertical faz mais sentido; mantemos a
-        // indicação visual simples e deixamos o scroll do container posicionar o card.
         const horizontal = !!card.closest('.horizontal-scroll');
-        const after = horizontal ? p.x > r.left + r.width / 2 : p.y > r.top + r.height / 2;
-        touchDrag.targetId = card.dataset.id;
-        touchDrag.sourceTargetListId = holder.dataset.listId;
-        touchDrag.after = after;
-        if (horizontal) {
-            ensureTouchOverlay();
-            const line = document.getElementById('touch-drop-line');
+        const after = horizontal ? x > r.left + r.width / 2 : x > r.left + r.width / 2;
+        return { toId, targetId, after };
+    }
+
+    // Clique em espaço vazio da lista/tier: inserir no final.
+    return { toId, targetId: null, after: false };
+}
+
+function updateDoubleClickMoveTarget(x, y) {
+    if (!clickMove) return;
+    const target = getGameMoveTarget(x, y);
+    clearClickMoveVisuals();
+    if (!target) return;
+
+    if (target.targetId) {
+        const targetEl = document.querySelector(`.game-card[data-id="${CSS.escape(target.targetId)}"]`);
+        if (targetEl) {
+            targetEl.classList.add('click-move-target');
+            const r = targetEl.getBoundingClientRect();
+            const line = ensureClickMoveLine();
             line.style.display = 'block';
-            line.style.top = Math.max(0, r.top - 2) + 'px';
-            line.style.height = Math.max(8, r.height + 4) + 'px';
-            line.style.width = '3px';
-            line.style.left = (after ? r.right - 2 : r.left - 2) + 'px';
-        } else showTouchDropLine(r, after);
-    } else if (holder) {
-        touchDrag.targetId = null;
-        touchDrag.sourceTargetListId = holder.dataset.listId;
-        touchDrag.after = false;
-        const r = holder.getBoundingClientRect();
-        showTouchDropLine({left:r.left+6,width:Math.max(8,r.width-12),top:r.top+6,bottom:r.top+6,height:0}, false);
+            if (targetEl.closest('.horizontal-scroll')) {
+                line.style.left = (target.after ? r.right - 2 : r.left - 2) + 'px';
+                line.style.top = Math.max(0, r.top - 2) + 'px';
+                line.style.width = '3px';
+                line.style.height = Math.max(8, r.height + 4) + 'px';
+            } else {
+                line.style.left = Math.max(0, r.left - 2) + 'px';
+                line.style.top = (target.after ? r.bottom - 2 : r.top - 2) + 'px';
+                line.style.width = Math.max(8, r.width + 4) + 'px';
+                line.style.height = '3px';
+            }
+        }
+    } else {
+        const holder = document.querySelector(`[data-list-id="${CSS.escape(target.toId)}"]`);
+        if (holder) holder.classList.add('click-move-target');
     }
 }
 
-function updateTouchListTarget(p) {
-    clearTouchDropIndicator();
-    const el = document.elementFromPoint(p.x, p.y);
-    const item = el && el.closest ? el.closest('.list-item') : null;
-    if (!item) return;
-    const targetId = findListIdFromSidebarItem(item);
-    if (!targetId || targetId === touchDrag.id || isDescendantList(targetId, touchDrag.id)) return;
-    const target = getListById(rootData.Lists, targetId);
-    if (!target) return;
-    const r = item.getBoundingClientRect();
-    const ratio = (p.y-r.top)/Math.max(1,r.height);
-    const position = ratio < .25 ? 'before' : ratio > .75 ? 'after' : 'inside';
-    touchDrag.targetId = targetId;
-    touchDrag.position = position;
-    if (position === 'inside') item.classList.add('drag-over');
-    else showTouchDropLine(r, position === 'after');
-}
+function commitDoubleClickMove(target) {
+    if (!clickMove || !target) return false;
+    const from = getListById(rootData.Lists, clickMove.sourceId);
+    const to = getListById(rootData.Lists, target.toId);
+    if (!from || !to || normalizeSortMode(to.SortOrder) !== 'Manual') return false;
+    if (clickMove.id === target.targetId) return false;
 
-function findListIdFromSidebarItem(item) { return item?.dataset?.listId || null; }
-function isDescendantList(id, possibleAncestorId) {
-    const ancestor=getListById(rootData.Lists,possibleAncestorId); if(!ancestor) return false;
-    let found=false;
-    (function walk(ls){(ls||[]).forEach(l=>{if(l.Id===id)found=true;walk(l.Children);});})(ancestor.Children);
-    return found;
-}
-function removeListNode(id) {
-    function remove(ls){for(let i=0;i<ls.length;i++){if(ls[i].Id===id)return ls.splice(i,1)[0];if(ls[i].Children){const n=remove(ls[i].Children);if(n)return n;}}return null;}
-    return remove(rootData.Lists);
-}
-function commitTouchListDrag() {
-    const d=touchDrag; if(!d||!d.targetId||!d.position)return;
-    const node=removeListNode(d.id); if(!node)return;
-    const target=getListById(rootData.Lists,d.targetId); if(!target){rootData.Lists.push(node);return;}
-    if(d.position==='inside'){target.Children=target.Children||[];target.Children.push(node);}
-    else {const parent=findParent(rootData.Lists,target.Id);const siblings=parent?(parent.Children||(parent.Children=[])):rootData.Lists;const idx=siblings.findIndex(x=>x.Id===target.Id);siblings.splice(Math.max(0,idx+(d.position==='after'?1:0)),0,node);}
-    markDirty(); renderSidebar(); if(currentListId)selectList(currentListId,true);
-}
-function commitTouchGameDrag() {
-    const d=touchDrag; if(!d||!d.sourceTargetListId)return;
-    const scrollPositions=captureTierScrollPositions();
-    const from=getListById(rootData.Lists,d.sourceId), to=getListById(rootData.Lists,d.sourceTargetListId);
-    if(!from||!to||normalizeSortMode(to.SortOrder)!=='Manual')return;
-    const oldIndex=(from.GameIds||[]).indexOf(d.id); if(oldIndex>=0)from.GameIds.splice(oldIndex,1);
-    to.GameIds=to.GameIds||[];
-    let insertIndex=to.GameIds.length;
-    if(d.targetId){const ti=to.GameIds.indexOf(d.targetId);if(ti>=0)insertIndex=ti+(d.after?1:0);}
-    to.GameIds.splice(insertIndex,0,d.id);
-    markDirty(); renderSidebar(); if(currentListId)selectList(currentListId,true);
+    const scrollPositions = captureTierScrollPositions();
+    from.GameIds = from.GameIds || [];
+    to.GameIds = to.GameIds || [];
+    const oldIndex = from.GameIds.indexOf(clickMove.id);
+    if (oldIndex < 0) return false;
+    from.GameIds.splice(oldIndex, 1);
+
+    let insertIndex = to.GameIds.length;
+    if (target.targetId) {
+        const ti = to.GameIds.indexOf(target.targetId);
+        if (ti < 0) return false;
+        insertIndex = ti + (target.after ? 1 : 0);
+    }
+    to.GameIds.splice(insertIndex, 0, clickMove.id);
+    markDirty();
+    renderSidebar();
+    if (currentListId) selectList(currentListId, true);
     restoreTierScrollPositions(scrollPositions);
-}
-function finishTouchDrag(commit) {
-    if(!touchDrag)return;
-    if(commit){if(touchDrag.type==='game')commitTouchGameDrag();else commitTouchListDrag();}
-    if(touchDrag.ghost)touchDrag.ghost.remove();
-    document.querySelectorAll('.touch-source-hidden').forEach(x=>x.classList.remove('touch-source-hidden'));
-    document.querySelectorAll('.list-item.drag-over').forEach(x=>x.classList.remove('drag-over'));
-    clearTouchDropIndicator(); document.body.classList.remove('touch-dragging');
-    touchSuppressClickUntil=Date.now()+450; touchDrag=null;
+    cancelDoubleClickMove();
+    return true;
 }
 
-function installTouchNavigation() {
-    if(touchInitialized)return; touchInitialized=true; ensureTouchOverlay();
-    document.addEventListener('pointerdown',e=>{
-        if(!isTouchMode()||e.pointerType!=='touch')return;
-        if(e.target.closest('#setup-modal,#edit-modal,input,select,button,textarea'))return;
-        const card=e.target.closest('.game-card'), item=e.target.closest('.list-item');
-        if(!card&&!item)return;
-        if(touchPending){clearTimeout(touchPending.timer);touchPending=null;}
-        const p=touchPoint(e), source=card||item, list=item?getListById(rootData.Lists,findListIdFromSidebarItem(item)):null;
-        touchPending={type:card?'game':'list',pointerId:e.pointerId,source,startX:p.x,startY:p.y,
-            timer:setTimeout(()=>{
-                if(!touchPending||touchPending.pointerId!==e.pointerId)return;
-                const pending=touchPending; touchPending=null;
-                if(pending.type==='game')startTouchGameDrag(pending.source,{x:pending.startX,y:pending.startY},e.pointerId);
-                else if(list)startTouchListDrag(pending.source,list,{x:pending.startX,y:pending.startY},e.pointerId);
-            }, 550)};
-    },{passive:true});
+function initDoubleClickMove() {
+    if (clickMoveInitialized) return;
+    clickMoveInitialized = true;
 
-    document.addEventListener('pointermove',e=>{
-        if(!isTouchMode()||e.pointerType!=='touch')return;
-        if(!touchDrag){
-            if(touchPending&&touchPending.pointerId===e.pointerId){
-                const dx=e.clientX-touchPending.startX,dy=e.clientY-touchPending.startY;
-                // Qualquer movimento perceptível antes do long-press cancela o drag.
-                // O browser fica livre para executar o scroll nativo.
-                if(Math.hypot(dx,dy)>10){clearTimeout(touchPending.timer);touchPending=null;}
-            }
+    document.addEventListener('dblclick', e => {
+        if (cfgInteractionMode !== 'double') return;
+        const card = e.target.closest ? e.target.closest('.game-card') : null;
+        if (!card) return;
+        if (!clickMove) startDoubleClickMove(card, e);
+    });
+
+    document.addEventListener('pointermove', e => {
+        if (!clickMove) return;
+        clickMove.ghost.style.left = e.clientX + 'px';
+        clickMove.ghost.style.top = e.clientY + 'px';
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const tier = el && el.closest ? el.closest('.tier-games.horizontal-scroll') : null;
+        if (tier) {
+            const r = tier.getBoundingClientRect();
+            const edge = Math.min(90, Math.max(45, r.width * .16));
+            if (e.clientX > r.right - edge) tier.scrollLeft += Math.max(6, Math.round((e.clientX - (r.right - edge)) * .35));
+            else if (e.clientX < r.left + edge) tier.scrollLeft -= Math.max(6, Math.round(((r.left + edge) - e.clientX) * .35));
+        }
+        updateDoubleClickMoveTarget(e.clientX, e.clientY);
+    }, { passive: true });
+
+    document.addEventListener('click', e => {
+        if (!clickMove) return;
+        if (e.target.closest && e.target.closest('#setup-modal, #edit-modal, #sidebar-toggle, .sidebar-settings, input, select, button')) return;
+        const target = getGameMoveTarget(e.clientX, e.clientY);
+        // Qualquer clique fora de um destino válido, inclusive no próprio jogo, cancela.
+        if (!target || target.targetId === clickMove.id) {
+            e.preventDefault();
+            e.stopPropagation();
+            cancelDoubleClickMove();
             return;
         }
-        if(touchDrag.pointerId!==e.pointerId)return;
         e.preventDefault();
-        touchDrag.ghost.style.left=e.clientX+'px';touchDrag.ghost.style.top=e.clientY+'px';
-        const p={x:e.clientX,y:e.clientY};
-        if(touchDrag.type==='game')updateTouchGameTarget(p);else updateTouchListTarget(p);
-    },{passive:false});
+        e.stopPropagation();
+        commitDoubleClickMove(target);
+    }, true);
 
-    document.addEventListener('pointerup',e=>{
-        if(!isTouchMode()||e.pointerType!=='touch')return;
-        if(touchDrag&&touchDrag.pointerId===e.pointerId){e.preventDefault();finishTouchDrag(true);return;}
-        if(touchPending&&touchPending.pointerId===e.pointerId){clearTimeout(touchPending.timer);touchPending=null;}
-    },{passive:false});
-    document.addEventListener('pointercancel',e=>{
-        if(!isTouchMode()||e.pointerType!=='touch')return;
-        if(touchDrag&&touchDrag.pointerId===e.pointerId)finishTouchDrag(false);
-        if(touchPending&&touchPending.pointerId===e.pointerId){clearTimeout(touchPending.timer);touchPending=null;}
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && clickMove) cancelDoubleClickMove();
     });
-    document.addEventListener('click',e=>{if(isTouchMode()&&Date.now()<touchSuppressClickUntil){e.preventDefault();e.stopPropagation();}},true);
 }
-installTouchNavigation();
 
+initDoubleClickMove();
 
 // ──────────────────────────────────────────────
 // Save to Supabase
