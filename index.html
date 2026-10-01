@@ -51,7 +51,13 @@
         .btn-danger:hover { background: rgba(220,50,50,0.35); }
 
         /* Sidebar */
-        .sidebar { width: 310px; background: var(--panel); display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+        .sidebar { width: 310px; background: var(--panel); display: flex; flex-direction: column; border-right: 1px solid var(--border); transition: width 0.18s ease; overflow: hidden; flex-shrink: 0; }
+        .sidebar.collapsed { width: 48px; }
+        .sidebar.collapsed .sidebar-title, .sidebar.collapsed .lists-container { display: none; }
+        .sidebar.collapsed .sidebar-header { padding: 8px 6px; justify-content: center; }
+        .sidebar.collapsed .sidebar-actions { width: 100%; justify-content: center; }
+        .sidebar.collapsed .sidebar-settings { display: none; }
+        .sidebar-toggle { flex-shrink: 0; width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
         .sidebar-header { padding: 18px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
         .sidebar-header h1 { font-size: 16px; font-weight: 700; }
         .lists-container { flex: 1; overflow-y: auto; padding: 8px 8px; }
@@ -197,8 +203,11 @@
 
 <div class="sidebar">
     <div class="sidebar-header">
-        <h1>Minhas Listas</h1>
-        <button class="btn-sm" onclick="openSetup()">⚙</button>
+        <h1 class="sidebar-title">Minhas Listas</h1>
+        <div class="sidebar-actions" style="display:flex;gap:6px;align-items:center">
+            <button class="btn-sm sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Recolher barra lateral">◀</button>
+            <button class="btn-sm sidebar-settings" onclick="openSetup()">⚙</button>
+        </div>
     </div>
     <div class="lists-container" id="lists-container"></div>
 </div>
@@ -237,6 +246,7 @@ let cfgMeta = localStorage.getItem('cfgMeta') !== 'false';
 let cfgFont = localStorage.getItem('cfgFont') || 'Inter';
 let cfgTierLayout = localStorage.getItem('cfgTierLayout') || 'Wrap';
 let cfgInputMode = localStorage.getItem('cfgInputMode') || 'mouse';
+let sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
 let draggedGameId = null;
 let draggedGameFromId = null;
 let cardZoom = parseInt(localStorage.getItem('cardZoom') || '140');
@@ -280,6 +290,7 @@ function applySettings() {
     document.documentElement.style.setProperty('--card-width', `${cardZoom}px`);
     document.getElementById('zoom-slider').value = cardZoom;
     document.body.classList.toggle('touch-mode', cfgInputMode === 'touch');
+    applySidebarState();
     const inputMode = document.getElementById('cfg-input-mode');
     if (inputMode) inputMode.value = cfgInputMode;
 }
@@ -585,6 +596,23 @@ function moveListNode(dragId, targetId, mode) {
     clearListDragVisuals();
     renderSidebar();
     if (currentListId) selectList(currentListId, true);
+}
+
+function applySidebarState() {
+    const sidebar = document.querySelector('.sidebar');
+    const btn = document.getElementById('sidebar-toggle');
+    if (!sidebar) return;
+    sidebar.classList.toggle('collapsed', sidebarCollapsed);
+    if (btn) {
+        btn.textContent = sidebarCollapsed ? '▶' : '◀';
+        btn.title = sidebarCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral';
+    }
+}
+
+function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed;
+    localStorage.setItem('sidebarCollapsed', sidebarCollapsed);
+    applySidebarState();
 }
 
 function renderSidebar() {
@@ -942,7 +970,26 @@ window.addEventListener('resize', () => {
 // ──────────────────────────────────────────────
 // Select & render list
 // ──────────────────────────────────────────────
+function captureTierScrollPositions() {
+    const result = {};
+    document.querySelectorAll('.tier-games.horizontal-scroll[data-list-id]').forEach(el => {
+        result[el.dataset.listId] = el.scrollLeft;
+    });
+    return result;
+}
+
+function restoreTierScrollPositions(positions) {
+    if (!positions) return;
+    requestAnimationFrame(() => {
+        document.querySelectorAll('.tier-games.horizontal-scroll[data-list-id]').forEach(el => {
+            const v = positions[el.dataset.listId];
+            if (v !== undefined) el.scrollLeft = v;
+        });
+    });
+}
+
 function selectList(id, preserveSearch = false) {
+    const tierScrollPositions = captureTierScrollPositions();
     const list = getListById(rootData.Lists, id);
     if (!list) return;
     if (!preserveSearch && currentListId !== id) currentSearch = '';
@@ -1090,7 +1137,10 @@ function selectList(id, preserveSearch = false) {
         sortables.push(sg);
     }
     initCardDrag();
-    requestAnimationFrame(updateTierHeaderWidth);
+    requestAnimationFrame(() => {
+        updateTierHeaderWidth();
+        restoreTierScrollPositions(tierScrollPositions);
+    });
 }
 
 function isDark(hex) {
@@ -1121,13 +1171,16 @@ function moveGameToList(gid, fromId, toId) {
 
 // Touch navigation / drag
 // ──────────────────────────────────────────────
+// O gesto touch segue o comportamento de Android/iOS: tocar e mover = scroll;
+// segurar sem mover por um tempo = inicia o rearranjo. O timer é global para não
+// desaparecer quando o dedo sai do card durante um scroll.
 let touchDrag = null;
 let touchSuppressClickUntil = 0;
 let touchInitialized = false;
+let touchPending = null;
 
-function touchPoint(e) {
-    return { x: e.clientX, y: e.clientY };
-}
+function touchPoint(e) { return { x: e.clientX, y: e.clientY }; }
+function isTouchMode() { return cfgInputMode === 'touch'; }
 
 function clearTouchDropIndicator() {
     const line = document.getElementById('touch-drop-line');
@@ -1155,49 +1208,58 @@ function showTouchDropLine(rect, after = false) {
 function createTouchGhost(source) {
     const ghost = source.cloneNode(true);
     ghost.classList.add('touch-drag-ghost');
-    ghost.style.width = source.getBoundingClientRect().width + 'px';
-    ghost.style.height = source.getBoundingClientRect().height + 'px';
+    const r = source.getBoundingClientRect();
+    ghost.style.width = r.width + 'px';
+    ghost.style.height = r.height + 'px';
     document.body.appendChild(ghost);
     return ghost;
 }
 
-function isTouchMode() { return cfgInputMode === 'touch'; }
-
 function startTouchGameDrag(card, p, pointerId) {
     const holder = card.closest('[data-list-id]');
-    if (!holder) return;
+    if (!holder) return false;
     const sourceId = holder.dataset.listId;
     const source = getListById(rootData.Lists, sourceId);
-    if (!source || normalizeSortMode(source.SortOrder) !== 'Manual') return;
-
-    touchDrag = {
-        type: 'game', id: card.dataset.id, sourceId, pointerId,
-        startX: p.x, startY: p.y, ghost: createTouchGhost(card),
-        targetId: null, after: false
-    };
+    if (!source || normalizeSortMode(source.SortOrder) !== 'Manual') return false;
+    touchDrag = { type:'game', id:card.dataset.id, sourceId, pointerId,
+        startX:p.x, startY:p.y, ghost:createTouchGhost(card), targetId:null,
+        sourceTargetListId:sourceId, after:false };
     document.body.classList.add('touch-dragging');
     card.classList.add('touch-source-hidden');
     touchDrag.ghost.style.left = p.x + 'px';
     touchDrag.ghost.style.top = p.y + 'px';
     try { card.setPointerCapture(pointerId); } catch (_) {}
+    return true;
 }
 
 function startTouchListDrag(item, list, p, pointerId) {
-    touchDrag = {
-        type: 'list', id: list.Id, pointerId,
-        startX: p.x, startY: p.y, ghost: createTouchGhost(item),
-        targetId: null, position: null
-    };
+    touchDrag = { type:'list', id:list.Id, pointerId, startX:p.x, startY:p.y,
+        ghost:createTouchGhost(item), targetId:null, position:null };
     document.body.classList.add('touch-dragging');
     item.classList.add('touch-source-hidden');
     touchDrag.ghost.style.left = p.x + 'px';
     touchDrag.ghost.style.top = p.y + 'px';
     try { item.setPointerCapture(pointerId); } catch (_) {}
+    return true;
+}
+
+function autoScrollTouchTier(p) {
+    const el = document.elementFromPoint(p.x, p.y);
+    const tier = el && el.closest ? el.closest('.tier-games.horizontal-scroll') : null;
+    if (!tier) return;
+    const r = tier.getBoundingClientRect();
+    const edge = Math.min(90, Math.max(45, r.width * .16));
+    if (p.x > r.right - edge) {
+        tier.scrollLeft += Math.max(8, Math.round((p.x - (r.right-edge)) * .45));
+    } else if (p.x < r.left + edge) {
+        tier.scrollLeft -= Math.max(8, Math.round(((r.left+edge)-p.x) * .45));
+    }
 }
 
 function updateTouchGameTarget(p) {
     clearTouchDropIndicator();
     document.querySelectorAll('.list-item.drag-over').forEach(x => x.classList.remove('drag-over'));
+    autoScrollTouchTier(p);
     const el = document.elementFromPoint(p.x, p.y);
     const card = el && el.closest ? el.closest('.game-card') : null;
     const sidebarItem = el && el.closest ? el.closest('.list-item') : null;
@@ -1217,18 +1279,28 @@ function updateTouchGameTarget(p) {
 
     if (card && card.dataset.id !== touchDrag.id) {
         const r = card.getBoundingClientRect();
-        const after = p.y > r.top + r.height / 2;
+        // Em layout horizontal, a linha vertical faz mais sentido; mantemos a
+        // indicação visual simples e deixamos o scroll do container posicionar o card.
+        const horizontal = !!card.closest('.horizontal-scroll');
+        const after = horizontal ? p.x > r.left + r.width / 2 : p.y > r.top + r.height / 2;
         touchDrag.targetId = card.dataset.id;
         touchDrag.sourceTargetListId = holder.dataset.listId;
         touchDrag.after = after;
-        showTouchDropLine(r, after);
-    } else {
+        if (horizontal) {
+            ensureTouchOverlay();
+            const line = document.getElementById('touch-drop-line');
+            line.style.display = 'block';
+            line.style.top = Math.max(0, r.top - 2) + 'px';
+            line.style.height = Math.max(8, r.height + 4) + 'px';
+            line.style.width = '3px';
+            line.style.left = (after ? r.right - 2 : r.left - 2) + 'px';
+        } else showTouchDropLine(r, after);
+    } else if (holder) {
         touchDrag.targetId = null;
         touchDrag.sourceTargetListId = holder.dataset.listId;
         touchDrag.after = false;
         const r = holder.getBoundingClientRect();
-        const lineRect = { left: r.left + 6, width: Math.max(8, r.width - 12), top: r.top + 6, bottom: r.top + 6, height: 0 };
-        showTouchDropLine(lineRect, false);
+        showTouchDropLine({left:r.left+6,width:Math.max(8,r.width-12),top:r.top+6,bottom:r.top+6,height:0}, false);
     }
 }
 
@@ -1237,185 +1309,109 @@ function updateTouchListTarget(p) {
     const el = document.elementFromPoint(p.x, p.y);
     const item = el && el.closest ? el.closest('.list-item') : null;
     if (!item) return;
-    const targetId = [...document.querySelectorAll('.list-item')].find(x => x === item)?.querySelector('.list-name') ?
-        findListIdFromSidebarItem(item) : null;
-    if (!targetId || targetId === touchDrag.id) return;
+    const targetId = findListIdFromSidebarItem(item);
+    if (!targetId || targetId === touchDrag.id || isDescendantList(targetId, touchDrag.id)) return;
     const target = getListById(rootData.Lists, targetId);
     if (!target) return;
-    if (isDescendantList(targetId, touchDrag.id)) return;
-
     const r = item.getBoundingClientRect();
-    const ratio = (p.y - r.top) / Math.max(1, r.height);
-    let position = ratio < .25 ? 'before' : ratio > .75 ? 'after' : 'inside';
+    const ratio = (p.y-r.top)/Math.max(1,r.height);
+    const position = ratio < .25 ? 'before' : ratio > .75 ? 'after' : 'inside';
     touchDrag.targetId = targetId;
     touchDrag.position = position;
-    if (position === 'inside') {
-        item.classList.add('drag-over');
-    } else {
-        showTouchDropLine(r, position === 'after');
-    }
+    if (position === 'inside') item.classList.add('drag-over');
+    else showTouchDropLine(r, position === 'after');
 }
 
-function findListIdFromSidebarItem(item) {
-    return item?.dataset?.listId || null;
-}
-
+function findListIdFromSidebarItem(item) { return item?.dataset?.listId || null; }
 function isDescendantList(id, possibleAncestorId) {
-    const ancestor = getListById(rootData.Lists, possibleAncestorId);
-    if (!ancestor) return false;
-    let found = false;
-    (function walk(lists) { (lists || []).forEach(l => { if (l.Id === id) found = true; walk(l.Children); }); })(ancestor.Children);
+    const ancestor=getListById(rootData.Lists,possibleAncestorId); if(!ancestor) return false;
+    let found=false;
+    (function walk(ls){(ls||[]).forEach(l=>{if(l.Id===id)found=true;walk(l.Children);});})(ancestor.Children);
     return found;
 }
-
 function removeListNode(id) {
-    function remove(lists) {
-        for (let i = 0; i < lists.length; i++) {
-            if (lists[i].Id === id) return lists.splice(i, 1)[0];
-            if (lists[i].Children) { const n = remove(lists[i].Children); if (n) return n; }
-        }
-        return null;
-    }
+    function remove(ls){for(let i=0;i<ls.length;i++){if(ls[i].Id===id)return ls.splice(i,1)[0];if(ls[i].Children){const n=remove(ls[i].Children);if(n)return n;}}return null;}
     return remove(rootData.Lists);
 }
-
 function commitTouchListDrag() {
-    const d = touchDrag;
-    if (!d || !d.targetId || !d.position) return;
-    const node = removeListNode(d.id);
-    if (!node) return;
-    const target = getListById(rootData.Lists, d.targetId);
-    if (!target) { rootData.Lists.push(node); return; }
-    if (d.position === 'inside') {
-        target.Children = target.Children || [];
-        target.Children.push(node);
-    } else {
-        const parent = findParent(rootData.Lists, target.Id);
-        const siblings = parent ? (parent.Children || (parent.Children = [])) : rootData.Lists;
-        const idx = siblings.findIndex(x => x.Id === target.Id);
-        siblings.splice(Math.max(0, idx + (d.position === 'after' ? 1 : 0)), 0, node);
-    }
-    markDirty();
-    renderSidebar();
-    if (currentListId) selectList(currentListId, true);
+    const d=touchDrag; if(!d||!d.targetId||!d.position)return;
+    const node=removeListNode(d.id); if(!node)return;
+    const target=getListById(rootData.Lists,d.targetId); if(!target){rootData.Lists.push(node);return;}
+    if(d.position==='inside'){target.Children=target.Children||[];target.Children.push(node);}
+    else {const parent=findParent(rootData.Lists,target.Id);const siblings=parent?(parent.Children||(parent.Children=[])):rootData.Lists;const idx=siblings.findIndex(x=>x.Id===target.Id);siblings.splice(Math.max(0,idx+(d.position==='after'?1:0)),0,node);}
+    markDirty(); renderSidebar(); if(currentListId)selectList(currentListId,true);
 }
-
 function commitTouchGameDrag() {
-    const d = touchDrag;
-    if (!d || !d.sourceTargetListId) return;
-    const from = getListById(rootData.Lists, d.sourceId);
-    const to = getListById(rootData.Lists, d.sourceTargetListId);
-    if (!from || !to || normalizeSortMode(to.SortOrder) !== 'Manual') return;
-    if (from === to && d.targetId === d.id) return;
-
-    const oldIndex = (from.GameIds || []).indexOf(d.id);
-    if (oldIndex >= 0) from.GameIds.splice(oldIndex, 1);
-    to.GameIds = to.GameIds || [];
-    let insertIndex = to.GameIds.length;
-    if (d.targetId) {
-        const targetIndex = to.GameIds.indexOf(d.targetId);
-        if (targetIndex >= 0) insertIndex = targetIndex + (d.after ? 1 : 0);
-    }
-    to.GameIds.splice(insertIndex, 0, d.id);
-    markDirty();
-    renderSidebar();
-    if (currentListId) selectList(currentListId, true);
+    const d=touchDrag; if(!d||!d.sourceTargetListId)return;
+    const scrollPositions=captureTierScrollPositions();
+    const from=getListById(rootData.Lists,d.sourceId), to=getListById(rootData.Lists,d.sourceTargetListId);
+    if(!from||!to||normalizeSortMode(to.SortOrder)!=='Manual')return;
+    const oldIndex=(from.GameIds||[]).indexOf(d.id); if(oldIndex>=0)from.GameIds.splice(oldIndex,1);
+    to.GameIds=to.GameIds||[];
+    let insertIndex=to.GameIds.length;
+    if(d.targetId){const ti=to.GameIds.indexOf(d.targetId);if(ti>=0)insertIndex=ti+(d.after?1:0);}
+    to.GameIds.splice(insertIndex,0,d.id);
+    markDirty(); renderSidebar(); if(currentListId)selectList(currentListId,true);
+    restoreTierScrollPositions(scrollPositions);
 }
-
 function finishTouchDrag(commit) {
-    if (!touchDrag) return;
-    if (commit) {
-        if (touchDrag.type === 'game') commitTouchGameDrag();
-        else commitTouchListDrag();
-    }
-    if (touchDrag.ghost) touchDrag.ghost.remove();
-    document.querySelectorAll('.touch-source-hidden').forEach(x => x.classList.remove('touch-source-hidden'));
-    document.querySelectorAll('.list-item.drag-over').forEach(x => x.classList.remove('drag-over'));
-    clearTouchDropIndicator();
-    document.body.classList.remove('touch-dragging');
-    touchSuppressClickUntil = Date.now() + 450;
-    touchDrag = null;
+    if(!touchDrag)return;
+    if(commit){if(touchDrag.type==='game')commitTouchGameDrag();else commitTouchListDrag();}
+    if(touchDrag.ghost)touchDrag.ghost.remove();
+    document.querySelectorAll('.touch-source-hidden').forEach(x=>x.classList.remove('touch-source-hidden'));
+    document.querySelectorAll('.list-item.drag-over').forEach(x=>x.classList.remove('drag-over'));
+    clearTouchDropIndicator(); document.body.classList.remove('touch-dragging');
+    touchSuppressClickUntil=Date.now()+450; touchDrag=null;
 }
 
 function installTouchNavigation() {
-    if (touchInitialized) return;
-    touchInitialized = true;
-    ensureTouchOverlay();
+    if(touchInitialized)return; touchInitialized=true; ensureTouchOverlay();
+    document.addEventListener('pointerdown',e=>{
+        if(!isTouchMode()||e.pointerType!=='touch')return;
+        if(e.target.closest('#setup-modal,#edit-modal,input,select,button,textarea'))return;
+        const card=e.target.closest('.game-card'), item=e.target.closest('.list-item');
+        if(!card&&!item)return;
+        if(touchPending){clearTimeout(touchPending.timer);touchPending=null;}
+        const p=touchPoint(e), source=card||item, list=item?getListById(rootData.Lists,findListIdFromSidebarItem(item)):null;
+        touchPending={type:card?'game':'list',pointerId:e.pointerId,source,startX:p.x,startY:p.y,
+            timer:setTimeout(()=>{
+                if(!touchPending||touchPending.pointerId!==e.pointerId)return;
+                const pending=touchPending; touchPending=null;
+                if(pending.type==='game')startTouchGameDrag(pending.source,{x:pending.startX,y:pending.startY},e.pointerId);
+                else if(list)startTouchListDrag(pending.source,list,{x:pending.startX,y:pending.startY},e.pointerId);
+            }, 550)};
+    },{passive:true});
 
-    document.addEventListener('pointerdown', e => {
-        if (!isTouchMode() || e.pointerType !== 'touch') return;
-        if (e.target.closest('#setup-modal, #edit-modal, input, select, button, textarea')) return;
-        const card = e.target.closest('.game-card');
-        const item = e.target.closest('.list-item');
-        if (!card && !item) return;
-
-        const p = touchPoint(e);
-        const source = card || item;
-        const delay = card ? 140 : 220;
-        const list = item ? getListById(rootData.Lists, findListIdFromSidebarItem(item)) : null;
-        const timer = setTimeout(() => {
-            if (!touchDrag && pending && pending.pointerId === e.pointerId) {
-                if (pending.type === 'game') startTouchGameDrag(card, p, e.pointerId);
-                else if (list) startTouchListDrag(item, list, p, e.pointerId);
-            }
-        }, delay);
-        const pending = { type: card ? 'game' : 'list', pointerId: e.pointerId, startX: p.x, startY: p.y, timer };
-        source._touchPending = pending;
-    }, { passive: true });
-
-    document.addEventListener('pointermove', e => {
-        if (!isTouchMode() || e.pointerType !== 'touch') return;
-        const d = touchDrag;
-        const source = document.elementFromPoint(e.clientX, e.clientY)?.closest('.game-card, .list-item');
-        const pending = source?._touchPending;
-        if (!d) {
-            const candidate = document.querySelectorAll('.game-card, .list-item');
-            for (const el of candidate) {
-                const q = el._touchPending;
-                if (q && q.pointerId === e.pointerId) {
-                    const dx = e.clientX - q.startX, dy = e.clientY - q.startY;
-                    if (Math.hypot(dx, dy) > 8) { clearTimeout(q.timer); delete el._touchPending; }
-                    break;
-                }
+    document.addEventListener('pointermove',e=>{
+        if(!isTouchMode()||e.pointerType!=='touch')return;
+        if(!touchDrag){
+            if(touchPending&&touchPending.pointerId===e.pointerId){
+                const dx=e.clientX-touchPending.startX,dy=e.clientY-touchPending.startY;
+                // Qualquer movimento perceptível antes do long-press cancela o drag.
+                // O browser fica livre para executar o scroll nativo.
+                if(Math.hypot(dx,dy)>10){clearTimeout(touchPending.timer);touchPending=null;}
             }
             return;
         }
-        if (d.pointerId !== e.pointerId) return;
+        if(touchDrag.pointerId!==e.pointerId)return;
         e.preventDefault();
-        d.ghost.style.left = e.clientX + 'px';
-        d.ghost.style.top = e.clientY + 'px';
-        if (d.type === 'game') updateTouchGameTarget({x:e.clientX,y:e.clientY});
-        else updateTouchListTarget({x:e.clientX,y:e.clientY});
-    }, { passive: false });
+        touchDrag.ghost.style.left=e.clientX+'px';touchDrag.ghost.style.top=e.clientY+'px';
+        const p={x:e.clientX,y:e.clientY};
+        if(touchDrag.type==='game')updateTouchGameTarget(p);else updateTouchListTarget(p);
+    },{passive:false});
 
-    document.addEventListener('pointerup', e => {
-        if (!isTouchMode() || e.pointerType !== 'touch') return;
-        if (touchDrag && touchDrag.pointerId === e.pointerId) {
-            e.preventDefault(); finishTouchDrag(true);
-            return;
-        }
-        document.querySelectorAll('.game-card, .list-item').forEach(el => {
-            const q = el._touchPending;
-            if (q && q.pointerId === e.pointerId) { clearTimeout(q.timer); delete el._touchPending; }
-        });
-    }, { passive: false });
-
-    document.addEventListener('pointercancel', e => {
-        if (!isTouchMode() || e.pointerType !== 'touch') return;
-        if (touchDrag && touchDrag.pointerId === e.pointerId) finishTouchDrag(false);
-        document.querySelectorAll('.game-card, .list-item').forEach(el => {
-            const q = el._touchPending;
-            if (q && q.pointerId === e.pointerId) { clearTimeout(q.timer); delete el._touchPending; }
-        });
+    document.addEventListener('pointerup',e=>{
+        if(!isTouchMode()||e.pointerType!=='touch')return;
+        if(touchDrag&&touchDrag.pointerId===e.pointerId){e.preventDefault();finishTouchDrag(true);return;}
+        if(touchPending&&touchPending.pointerId===e.pointerId){clearTimeout(touchPending.timer);touchPending=null;}
+    },{passive:false});
+    document.addEventListener('pointercancel',e=>{
+        if(!isTouchMode()||e.pointerType!=='touch')return;
+        if(touchDrag&&touchDrag.pointerId===e.pointerId)finishTouchDrag(false);
+        if(touchPending&&touchPending.pointerId===e.pointerId){clearTimeout(touchPending.timer);touchPending=null;}
     });
-
-    document.addEventListener('click', e => {
-        if (isTouchMode() && Date.now() < touchSuppressClickUntil) {
-            e.preventDefault(); e.stopPropagation();
-        }
-    }, true);
+    document.addEventListener('click',e=>{if(isTouchMode()&&Date.now()<touchSuppressClickUntil){e.preventDefault();e.stopPropagation();}},true);
 }
-
 installTouchNavigation();
 
 
