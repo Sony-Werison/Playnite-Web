@@ -96,6 +96,19 @@
         .sort-select { padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); outline: none; font-family: inherit; font-size: 12px; }
         .sortable-ghost { opacity: 0.32 !important; }
         .sortable-chosen { box-shadow: 0 0 0 2px var(--accent-soft); }
+        /* Touch mode: só é ativado quando o usuário escolhe Touch nas configurações.
+           O modo padrão (mouse/teclado) permanece visual e comportamentalmente igual. */
+        body.touch-mode { -webkit-tap-highlight-color: transparent; }
+        body.touch-mode .game-card { cursor: grab; user-select: none; -webkit-user-select: none; }
+        body.touch-mode .list-item { user-select: none; -webkit-user-select: none; }
+        body.touch-mode .content-area { overscroll-behavior: contain; }
+        body.touch-mode .sidebar, body.touch-mode .lists-container { overscroll-behavior: contain; }
+        .touch-drag-ghost { position: fixed; z-index: 3000; pointer-events: none; opacity: .82; transform: translate(-50%, -50%) scale(.96); box-shadow: 0 16px 36px rgba(0,0,0,.45); border-radius: 8px; }
+        .touch-drop-line { position: fixed; z-index: 2999; pointer-events: none; height: 3px; background: var(--accent); border-radius: 3px; box-shadow: 0 0 8px rgba(139,124,255,.55); display: none; }
+        .touch-drag-active { cursor: grabbing !important; }
+        .touch-source-hidden { opacity: .18 !important; }
+        body.touch-mode.touch-dragging * { touch-action: none !important; }
+
         .zoom-slider { width: 90px; }
         .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); padding: 7px 14px; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 12px; }
         .btn-outline:hover { background: var(--card); }
@@ -144,6 +157,7 @@
             <div class="section-title">Interface</div>
             <div class="toggle-group"><input type="checkbox" id="cfg-meta"><label for="cfg-meta">Mostrar nota Metacritic nas capas</label></div>
             <div class="input-group"><label>Fonte da Interface</label><input type="text" id="cfg-font" placeholder="Inter"></div>
+             <div class="input-group"><label>Modo de navegação</label><select id="cfg-input-mode"><option value="mouse">Mouse / teclado (padrão)</option><option value="touch">Touch</option></select></div>
         </div>
 
         <button class="btn" onclick="saveSetup()">Salvar e Recarregar</button>
@@ -211,6 +225,7 @@ let url = localStorage.getItem('supaUrl') || '';
 let key = localStorage.getItem('supaKey') || '';
 let cfgMeta = localStorage.getItem('cfgMeta') !== 'false';
 let cfgFont = localStorage.getItem('cfgFont') || 'Inter';
+let cfgInputMode = localStorage.getItem('cfgInputMode') || 'mouse';
 let cardZoom = parseInt(localStorage.getItem('cardZoom') || '140');
 
 let rootData = { Lists: [], Games: [], Settings: {} };
@@ -249,6 +264,9 @@ function applySettings() {
     }
     document.documentElement.style.setProperty('--card-width', `${cardZoom}px`);
     document.getElementById('zoom-slider').value = cardZoom;
+    document.body.classList.toggle('touch-mode', cfgInputMode === 'touch');
+    const inputMode = document.getElementById('cfg-input-mode');
+    if (inputMode) inputMode.value = cfgInputMode;
 }
 
 function changeZoom(v) {
@@ -276,6 +294,8 @@ function openSetup() {
     document.getElementById('supa-key').value = key;
     document.getElementById('cfg-meta').checked = cfgMeta;
     document.getElementById('cfg-font').value = cfgFont;
+    const inputMode = document.getElementById('cfg-input-mode');
+    if (inputMode) inputMode.value = cfgInputMode;
     document.getElementById('setup-modal').style.display = 'flex';
     document.getElementById('close-setup').style.display = 'block';
 }
@@ -285,12 +305,15 @@ function saveSetup() {
     key = document.getElementById('supa-key').value.trim();
     cfgMeta = document.getElementById('cfg-meta').checked;
     cfgFont = document.getElementById('cfg-font').value.trim() || 'Inter';
+    cfgInputMode = document.getElementById('cfg-input-mode').value === 'touch' ? 'touch' : 'mouse';
     localStorage.setItem('supaUrl', url);
     localStorage.setItem('supaKey', key);
     localStorage.setItem('cfgMeta', cfgMeta);
     localStorage.setItem('cfgFont', cfgFont);
+    localStorage.setItem('cfgInputMode', cfgInputMode);
     applySettings();
     document.getElementById('setup-modal').style.display = 'none';
+    if (currentListId) selectList(currentListId, true);
     if (url && key) loadData(false);
 }
 
@@ -496,6 +519,7 @@ function renderListGroup(lists, container, isRoot) {
 
         const item = document.createElement('div');
         item.className = 'list-item' + (currentListId === list.Id ? ' active' : '');
+         item.dataset.listId = list.Id;
         if (!isRoot) item.style.paddingLeft = '12px';
 
         item.innerHTML = `
@@ -707,6 +731,8 @@ function generateCard(id) {
 
 function initCardDrag() {
     document.querySelectorAll('.game-card').forEach(c => {
+        if (cfgInputMode === 'touch') { c.draggable = false; return; }
+        c.draggable = true;
         c.addEventListener('dragstart', e => {
             const holder = c.closest('[data-list-id]');
             e.dataTransfer.setData('text/x-from', holder ? holder.dataset.listId : currentListId);
@@ -766,7 +792,7 @@ function selectList(id, preserveSearch = false) {
             const sg = new Sortable(row.querySelector('.tier-games'), {
                 group: { name: 'tier', pull: true, put: tierSortMode === 'Manual' },
                 animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
-                disabled: tierSortMode !== 'Manual',
+                disabled: tierSortMode !== 'Manual' || cfgInputMode === 'touch',
                 setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
                 onEnd: evt => {
                     if (evt.from === evt.to && evt.oldIndex === evt.newIndex) return;
@@ -807,7 +833,7 @@ function selectList(id, preserveSearch = false) {
         area.appendChild(grid);
         const sg = new Sortable(grid, {
             animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
-            disabled: normalizeSortMode(list.SortOrder) !== 'Manual',
+            disabled: normalizeSortMode(list.SortOrder) !== 'Manual' || cfgInputMode === 'touch',
             setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
             onEnd: evt => {
                 if (evt.oldIndex === evt.newIndex) return;
@@ -851,6 +877,306 @@ function moveGameToList(gid, fromId, toId) {
     markDirty();
     selectList(currentListId);
 }
+
+// ──────────────────────────────────────────────
+// Touch navigation / drag
+// ──────────────────────────────────────────────
+let touchDrag = null;
+let touchSuppressClickUntil = 0;
+let touchInitialized = false;
+
+function touchPoint(e) {
+    return { x: e.clientX, y: e.clientY };
+}
+
+function clearTouchDropIndicator() {
+    const line = document.getElementById('touch-drop-line');
+    if (line) line.style.display = 'none';
+}
+
+function ensureTouchOverlay() {
+    if (!document.getElementById('touch-drop-line')) {
+        const line = document.createElement('div');
+        line.id = 'touch-drop-line';
+        line.className = 'touch-drop-line';
+        document.body.appendChild(line);
+    }
+}
+
+function showTouchDropLine(rect, after = false) {
+    ensureTouchOverlay();
+    const line = document.getElementById('touch-drop-line');
+    line.style.display = 'block';
+    line.style.left = Math.max(0, rect.left - 2) + 'px';
+    line.style.width = Math.max(8, rect.width + 4) + 'px';
+    line.style.top = (after ? rect.bottom - 2 : rect.top - 2) + 'px';
+}
+
+function createTouchGhost(source) {
+    const ghost = source.cloneNode(true);
+    ghost.classList.add('touch-drag-ghost');
+    ghost.style.width = source.getBoundingClientRect().width + 'px';
+    ghost.style.height = source.getBoundingClientRect().height + 'px';
+    document.body.appendChild(ghost);
+    return ghost;
+}
+
+function isTouchMode() { return cfgInputMode === 'touch'; }
+
+function startTouchGameDrag(card, p, pointerId) {
+    const holder = card.closest('[data-list-id]');
+    if (!holder) return;
+    const sourceId = holder.dataset.listId;
+    const source = getListById(rootData.Lists, sourceId);
+    if (!source || normalizeSortMode(source.SortOrder) !== 'Manual') return;
+
+    touchDrag = {
+        type: 'game', id: card.dataset.id, sourceId, pointerId,
+        startX: p.x, startY: p.y, ghost: createTouchGhost(card),
+        targetId: null, after: false
+    };
+    document.body.classList.add('touch-dragging');
+    card.classList.add('touch-source-hidden');
+    touchDrag.ghost.style.left = p.x + 'px';
+    touchDrag.ghost.style.top = p.y + 'px';
+    try { card.setPointerCapture(pointerId); } catch (_) {}
+}
+
+function startTouchListDrag(item, list, p, pointerId) {
+    touchDrag = {
+        type: 'list', id: list.Id, pointerId,
+        startX: p.x, startY: p.y, ghost: createTouchGhost(item),
+        targetId: null, position: null
+    };
+    document.body.classList.add('touch-dragging');
+    item.classList.add('touch-source-hidden');
+    touchDrag.ghost.style.left = p.x + 'px';
+    touchDrag.ghost.style.top = p.y + 'px';
+    try { item.setPointerCapture(pointerId); } catch (_) {}
+}
+
+function updateTouchGameTarget(p) {
+    clearTouchDropIndicator();
+    document.querySelectorAll('.list-item.drag-over').forEach(x => x.classList.remove('drag-over'));
+    const el = document.elementFromPoint(p.x, p.y);
+    const card = el && el.closest ? el.closest('.game-card') : null;
+    const sidebarItem = el && el.closest ? el.closest('.list-item') : null;
+    const holder = el && el.closest ? el.closest('[data-list-id]') : null;
+    const targetListId = holder ? holder.dataset.listId : (sidebarItem ? findListIdFromSidebarItem(sidebarItem) : null);
+    if (!targetListId) return;
+    const targetList = getListById(rootData.Lists, targetListId);
+    if (!targetList || normalizeSortMode(targetList.SortOrder) !== 'Manual') return;
+
+    if (sidebarItem) {
+        touchDrag.targetId = null;
+        touchDrag.sourceTargetListId = targetListId;
+        touchDrag.after = false;
+        sidebarItem.classList.add('drag-over');
+        return;
+    }
+
+    if (card && card.dataset.id !== touchDrag.id) {
+        const r = card.getBoundingClientRect();
+        const after = p.y > r.top + r.height / 2;
+        touchDrag.targetId = card.dataset.id;
+        touchDrag.sourceTargetListId = holder.dataset.listId;
+        touchDrag.after = after;
+        showTouchDropLine(r, after);
+    } else {
+        touchDrag.targetId = null;
+        touchDrag.sourceTargetListId = holder.dataset.listId;
+        touchDrag.after = false;
+        const r = holder.getBoundingClientRect();
+        const lineRect = { left: r.left + 6, width: Math.max(8, r.width - 12), top: r.top + 6, bottom: r.top + 6, height: 0 };
+        showTouchDropLine(lineRect, false);
+    }
+}
+
+function updateTouchListTarget(p) {
+    clearTouchDropIndicator();
+    const el = document.elementFromPoint(p.x, p.y);
+    const item = el && el.closest ? el.closest('.list-item') : null;
+    if (!item) return;
+    const targetId = [...document.querySelectorAll('.list-item')].find(x => x === item)?.querySelector('.list-name') ?
+        findListIdFromSidebarItem(item) : null;
+    if (!targetId || targetId === touchDrag.id) return;
+    const target = getListById(rootData.Lists, targetId);
+    if (!target) return;
+    if (isDescendantList(targetId, touchDrag.id)) return;
+
+    const r = item.getBoundingClientRect();
+    const ratio = (p.y - r.top) / Math.max(1, r.height);
+    let position = ratio < .25 ? 'before' : ratio > .75 ? 'after' : 'inside';
+    touchDrag.targetId = targetId;
+    touchDrag.position = position;
+    if (position === 'inside') {
+        item.classList.add('drag-over');
+    } else {
+        showTouchDropLine(r, position === 'after');
+    }
+}
+
+function findListIdFromSidebarItem(item) {
+    return item?.dataset?.listId || null;
+}
+
+function isDescendantList(id, possibleAncestorId) {
+    const ancestor = getListById(rootData.Lists, possibleAncestorId);
+    if (!ancestor) return false;
+    let found = false;
+    (function walk(lists) { (lists || []).forEach(l => { if (l.Id === id) found = true; walk(l.Children); }); })(ancestor.Children);
+    return found;
+}
+
+function removeListNode(id) {
+    function remove(lists) {
+        for (let i = 0; i < lists.length; i++) {
+            if (lists[i].Id === id) return lists.splice(i, 1)[0];
+            if (lists[i].Children) { const n = remove(lists[i].Children); if (n) return n; }
+        }
+        return null;
+    }
+    return remove(rootData.Lists);
+}
+
+function commitTouchListDrag() {
+    const d = touchDrag;
+    if (!d || !d.targetId || !d.position) return;
+    const node = removeListNode(d.id);
+    if (!node) return;
+    const target = getListById(rootData.Lists, d.targetId);
+    if (!target) { rootData.Lists.push(node); return; }
+    if (d.position === 'inside') {
+        target.Children = target.Children || [];
+        target.Children.push(node);
+    } else {
+        const parent = findParent(rootData.Lists, target.Id);
+        const siblings = parent ? (parent.Children || (parent.Children = [])) : rootData.Lists;
+        const idx = siblings.findIndex(x => x.Id === target.Id);
+        siblings.splice(Math.max(0, idx + (d.position === 'after' ? 1 : 0)), 0, node);
+    }
+    markDirty();
+    renderSidebar();
+    if (currentListId) selectList(currentListId, true);
+}
+
+function commitTouchGameDrag() {
+    const d = touchDrag;
+    if (!d || !d.sourceTargetListId) return;
+    const from = getListById(rootData.Lists, d.sourceId);
+    const to = getListById(rootData.Lists, d.sourceTargetListId);
+    if (!from || !to || normalizeSortMode(to.SortOrder) !== 'Manual') return;
+    if (from === to && d.targetId === d.id) return;
+
+    const oldIndex = (from.GameIds || []).indexOf(d.id);
+    if (oldIndex >= 0) from.GameIds.splice(oldIndex, 1);
+    to.GameIds = to.GameIds || [];
+    let insertIndex = to.GameIds.length;
+    if (d.targetId) {
+        const targetIndex = to.GameIds.indexOf(d.targetId);
+        if (targetIndex >= 0) insertIndex = targetIndex + (d.after ? 1 : 0);
+    }
+    to.GameIds.splice(insertIndex, 0, d.id);
+    markDirty();
+    renderSidebar();
+    if (currentListId) selectList(currentListId, true);
+}
+
+function finishTouchDrag(commit) {
+    if (!touchDrag) return;
+    if (commit) {
+        if (touchDrag.type === 'game') commitTouchGameDrag();
+        else commitTouchListDrag();
+    }
+    if (touchDrag.ghost) touchDrag.ghost.remove();
+    document.querySelectorAll('.touch-source-hidden').forEach(x => x.classList.remove('touch-source-hidden'));
+    document.querySelectorAll('.list-item.drag-over').forEach(x => x.classList.remove('drag-over'));
+    clearTouchDropIndicator();
+    document.body.classList.remove('touch-dragging');
+    touchSuppressClickUntil = Date.now() + 450;
+    touchDrag = null;
+}
+
+function installTouchNavigation() {
+    if (touchInitialized) return;
+    touchInitialized = true;
+    ensureTouchOverlay();
+
+    document.addEventListener('pointerdown', e => {
+        if (!isTouchMode() || e.pointerType !== 'touch') return;
+        if (e.target.closest('#setup-modal, #edit-modal, input, select, button, textarea')) return;
+        const card = e.target.closest('.game-card');
+        const item = e.target.closest('.list-item');
+        if (!card && !item) return;
+
+        const p = touchPoint(e);
+        const source = card || item;
+        const delay = card ? 140 : 220;
+        const list = item ? getListById(rootData.Lists, findListIdFromSidebarItem(item)) : null;
+        const timer = setTimeout(() => {
+            if (!touchDrag && pending && pending.pointerId === e.pointerId) {
+                if (pending.type === 'game') startTouchGameDrag(card, p, e.pointerId);
+                else if (list) startTouchListDrag(item, list, p, e.pointerId);
+            }
+        }, delay);
+        const pending = { type: card ? 'game' : 'list', pointerId: e.pointerId, startX: p.x, startY: p.y, timer };
+        source._touchPending = pending;
+    }, { passive: true });
+
+    document.addEventListener('pointermove', e => {
+        if (!isTouchMode() || e.pointerType !== 'touch') return;
+        const d = touchDrag;
+        const source = document.elementFromPoint(e.clientX, e.clientY)?.closest('.game-card, .list-item');
+        const pending = source?._touchPending;
+        if (!d) {
+            const candidate = document.querySelectorAll('.game-card, .list-item');
+            for (const el of candidate) {
+                const q = el._touchPending;
+                if (q && q.pointerId === e.pointerId) {
+                    const dx = e.clientX - q.startX, dy = e.clientY - q.startY;
+                    if (Math.hypot(dx, dy) > 8) { clearTimeout(q.timer); delete el._touchPending; }
+                    break;
+                }
+            }
+            return;
+        }
+        if (d.pointerId !== e.pointerId) return;
+        e.preventDefault();
+        d.ghost.style.left = e.clientX + 'px';
+        d.ghost.style.top = e.clientY + 'px';
+        if (d.type === 'game') updateTouchGameTarget({x:e.clientX,y:e.clientY});
+        else updateTouchListTarget({x:e.clientX,y:e.clientY});
+    }, { passive: false });
+
+    document.addEventListener('pointerup', e => {
+        if (!isTouchMode() || e.pointerType !== 'touch') return;
+        if (touchDrag && touchDrag.pointerId === e.pointerId) {
+            e.preventDefault(); finishTouchDrag(true);
+            return;
+        }
+        document.querySelectorAll('.game-card, .list-item').forEach(el => {
+            const q = el._touchPending;
+            if (q && q.pointerId === e.pointerId) { clearTimeout(q.timer); delete el._touchPending; }
+        });
+    }, { passive: false });
+
+    document.addEventListener('pointercancel', e => {
+        if (!isTouchMode() || e.pointerType !== 'touch') return;
+        if (touchDrag && touchDrag.pointerId === e.pointerId) finishTouchDrag(false);
+        document.querySelectorAll('.game-card, .list-item').forEach(el => {
+            const q = el._touchPending;
+            if (q && q.pointerId === e.pointerId) { clearTimeout(q.timer); delete el._touchPending; }
+        });
+    });
+
+    document.addEventListener('click', e => {
+        if (isTouchMode() && Date.now() < touchSuppressClickUntil) {
+            e.preventDefault(); e.stopPropagation();
+        }
+    }, true);
+}
+
+installTouchNavigation();
 
 // ──────────────────────────────────────────────
 // Save to Supabase
