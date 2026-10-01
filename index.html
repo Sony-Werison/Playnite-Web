@@ -384,30 +384,71 @@ function findParent(lists, id, parent = null) {
 // Ordenação e pesquisa da lista atual
 // ──────────────────────────────────────────────
 function normalizeSortMode(mode) {
-    if (typeof mode === 'number') return ['Manual', 'Alphabetical', 'Metacritic'][mode] || 'Manual';
-    if (!mode) return 'Manual';
-    const m = String(mode).toLowerCase();
-    if (m.includes('alphabet')) return 'Alphabetical';
-    if (m.includes('meta')) return 'Metacritic';
+    // O Playnite pode serializar o enum como número, string numérica ou nome.
+    // A WebApp precisa aceitar todas as três formas para manter a ordenação
+    // compatível com a extensão.
+    if (typeof mode === 'number' && Number.isFinite(mode)) {
+        return ['Manual', 'Alphabetical', 'Metacritic'][mode] || 'Manual';
+    }
+    if (mode && typeof mode === 'object') {
+        // Alguns serializers expõem enums como { value__: 1 }.
+        if (Number.isFinite(mode.value__)) return ['Manual', 'Alphabetical', 'Metacritic'][mode.value__] || 'Manual';
+        if (mode.Value !== undefined) return normalizeSortMode(mode.Value);
+    }
+    if (mode === null || mode === undefined || mode === '') return 'Manual';
+
+    const m = String(mode).trim();
+    if (/^\d+$/.test(m)) {
+        return ['Manual', 'Alphabetical', 'Metacritic'][Number(m)] || 'Manual';
+    }
+
+    const lower = m.toLowerCase();
+    if (lower === 'alphabetical' || lower === 'alphabetic' || lower.includes('alphabet') || lower.includes('a-z')) return 'Alphabetical';
+    if (lower === 'metacritic' || lower.includes('meta')) return 'Metacritic';
     return 'Manual';
 }
 
-function getSortedGameIds(list) {
-    let ids = Array.from(list.GameIds || []);
-    const mode = normalizeSortMode(list.SortOrder);
+const sortCollator = new Intl.Collator('pt-BR', {
+    sensitivity: 'base',
+    numeric: true,
+    ignorePunctuation: true
+});
+
+function gameName(id) {
+    const g = gamesMap[id];
+    return String(g?.Name ?? g?.name ?? '');
+}
+
+function gameScore(id) {
+    const g = gamesMap[id];
+    // Supabase/JSON pode devolver números como strings.
+    const value = g?.CriticScore ?? g?.criticScore ?? g?.Metacritic ?? g?.metacritic;
+    if (value === null || value === undefined || value === '') return -1;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : -1;
+}
+
+function getSortedGameIds(list, sortModeOverride = null) {
+    let ids = Array.from(list?.GameIds || []);
+    const mode = normalizeSortMode(sortModeOverride ?? list?.SortOrder);
+
     if (mode === 'Alphabetical') {
-        ids.sort((a, b) => String(gamesMap[a]?.Name || '').localeCompare(String(gamesMap[b]?.Name || ''), 'pt-BR', { sensitivity: 'base' }));
+        ids.sort((a, b) => {
+            const result = sortCollator.compare(gameName(a), gameName(b));
+            return result !== 0 ? result : String(a).localeCompare(String(b));
+        });
     } else if (mode === 'Metacritic') {
         ids.sort((a, b) => {
-            const sa = Number.isFinite(gamesMap[a]?.CriticScore) ? gamesMap[a].CriticScore : -1;
-            const sb = Number.isFinite(gamesMap[b]?.CriticScore) ? gamesMap[b].CriticScore : -1;
-            if (sb !== sa) return sb - sa;
-            return String(gamesMap[a]?.Name || '').localeCompare(String(gamesMap[b]?.Name || ''), 'pt-BR', { sensitivity: 'base' });
+            const scoreDiff = gameScore(b) - gameScore(a);
+            if (scoreDiff !== 0) return scoreDiff;
+            const nameDiff = sortCollator.compare(gameName(a), gameName(b));
+            return nameDiff !== 0 ? nameDiff : String(a).localeCompare(String(b));
         });
     }
+
     if (currentSearch.trim()) {
         const q = currentSearch.trim().toLocaleLowerCase();
-        ids = ids.filter(id => String(gamesMap[id]?.Name || '').toLocaleLowerCase().includes(q));
+        ids = ids.filter(id => gameName(id).toLocaleLowerCase().includes(q));
     }
     return ids;
 }
@@ -715,16 +756,17 @@ function selectList(id, preserveSearch = false) {
     const isTier = !parent && list.IsTier && hasChildren;
 
     if (isTier) {
+        const tierSortMode = normalizeSortMode(list.SortOrder);
         list.Children.forEach(child => {
             const row = document.createElement('div');
             row.className = 'tier-row';
             row.innerHTML = `<div class="tier-header" style="background:${child.HexColor || '#444'};color:${isDark(child.HexColor) ? '#fff' : '#111'}">${esc(child.Name)}</div>
-                             <div class="tier-games" data-list-id="${child.Id}">${getSortedGameIds(child).map(generateCard).join('')}</div>`;
+                             <div class="tier-games" data-list-id="${child.Id}">${getSortedGameIds(child, tierSortMode).map(generateCard).join('')}</div>`;
             area.appendChild(row);
             const sg = new Sortable(row.querySelector('.tier-games'), {
-                group: { name: 'tier', pull: true, put: normalizeSortMode(list.SortOrder) === 'Manual' },
+                group: { name: 'tier', pull: true, put: tierSortMode === 'Manual' },
                 animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
-                disabled: normalizeSortMode(list.SortOrder) !== 'Manual',
+                disabled: tierSortMode !== 'Manual',
                 setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
                 onEnd: evt => {
                     if (evt.from === evt.to && evt.oldIndex === evt.newIndex) return;
