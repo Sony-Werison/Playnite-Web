@@ -76,7 +76,7 @@
         .list-color { width: 9px; height: 9px; border-radius: 50%; margin-right: 9px; flex-shrink: 0; }
         .list-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
         .list-count { font-size: 10px; color: var(--dim); background: var(--bg); padding: 1px 6px; border-radius: 8px; flex-shrink: 0; }
-        .list-children { overflow: hidden; }
+        .list-children { overflow: hidden; margin-left: 18px; padding-left: 4px; border-left: 1px solid var(--border); }
         .list-ctx-menu { position: fixed; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 4px; z-index: 500; box-shadow: 0 8px 24px rgba(0,0,0,0.4); min-width: 180px; }
         .list-ctx-menu .item { padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; }
         .list-ctx-menu .item:hover { background: var(--card-hover); }
@@ -109,7 +109,9 @@
         body.click-move-active { cursor: grabbing; user-select: none; }
         .game-card.click-move-ghost { position: fixed; z-index: 3000; pointer-events: none; opacity: .82; transform: translate(-50%, -50%) scale(.96); box-shadow: 0 16px 36px rgba(0,0,0,.45); border-radius: 8px; }
         .click-move-source { opacity: 1 !important; outline: 3px solid var(--accent) !important; outline-offset: 3px; box-shadow: 0 0 0 5px rgba(139,124,255,.18), 0 10px 28px rgba(0,0,0,.45) !important; transform: translateY(-3px) scale(1.025); z-index: 10; }
-        .click-move-target { outline: 2px solid var(--accent) !important; outline-offset: -2px; }
+        .list-item.click-move-target { outline: 2px solid var(--accent) !important; outline-offset: -2px; }
+        .game-card.move-source-hidden { display: none; }
+        .card-drop-slot { flex: 0 0 auto; border: 2px dashed rgba(139,124,255,.5); background: rgba(139,124,255,.08); border-radius: 8px; pointer-events: auto; }
         .click-move-line { position: fixed; z-index: 2999; pointer-events: none; background: var(--accent); border-radius: 3px; box-shadow: 0 0 8px rgba(139,124,255,.55); display: none; }
 
         .zoom-slider { width: 90px; }
@@ -123,14 +125,16 @@
         .games-grid { display: flex; flex-wrap: wrap; gap: 16px; align-content: flex-start; }
 
         /* Tier rows */
-        .tier-row { margin-bottom: 16px; background: var(--panel); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); display: flex; min-height: 130px; }
+        .tier-row { margin-bottom: 16px; background: var(--panel); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); display: flex; min-height: var(--tier-row-height, 0px); }
         .tier-header { width: var(--tier-header-width, 40px); flex: 0 0 var(--tier-header-width, 40px); display: flex; align-items: center; justify-content: center; padding: clamp(4px, calc(var(--card-width) * 0.08), 12px); font-weight: 700; font-size: clamp(10px, calc(var(--card-width) * 0.11), 15px); text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,0.4); word-break: break-word; }
-        .tier-games { flex: 1; padding: 12px; display: flex; gap: 10px; flex-wrap: wrap; min-height: 120px; min-width: 0; }
+        .tier-games { flex: 1; padding: 8px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; min-height: calc(var(--card-width) * 1.4 + 18px); min-width: 0; position: relative; }
+        .tier-games:empty::after { content: 'Sem jogos'; position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: var(--dim); font-size: 12px; pointer-events: none; }
         .tier-games.horizontal-scroll { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; align-items: flex-start; }
         .tier-row.pending-tier .tier-header { background: #555B6E !important; color: #fff !important; }
 
         /* Game Card */
-        .game-card { background: var(--card); border-radius: 8px; overflow: hidden; width: var(--card-width); flex-shrink: 0; border: 1px solid transparent; cursor: grab; position: relative; touch-action: none; transition: transform 0.15s, box-shadow 0.15s; }
+        .game-card { background: var(--card); border-radius: 8px; overflow: hidden; width: var(--card-width); flex-shrink: 0; border: 1px solid transparent; cursor: grab; position: relative; touch-action: pan-x pan-y pinch-zoom; transition: transform 0.15s, box-shadow 0.15s; }
+        body.drag-mode #content-area .game-card { touch-action: none; }
         .game-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.35); border-color: var(--border); }
         .game-cover { height: calc(var(--card-width) * 1.4); background: #2D3243; display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 700; color: rgba(255,255,255,0.15); background-size: cover; background-position: center; }
         .metacritic { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; background: rgba(0,0,0,0.75); color: white; border: 2px solid; }
@@ -148,7 +152,8 @@
         .list-item.drag-after::after { bottom: -2px; }
         .list-item.drag-into { outline: 2px solid var(--accent); outline-offset: -2px; background: rgba(139,124,255,.12); }
 
-        .loading { display: none; position: fixed; top: 16px; right: 16px; background: var(--accent); color: #10121A; padding: 7px 14px; border-radius: 20px; font-size: 11px; font-weight: bold; animation: pulse 1.5s infinite; z-index: 2000; }
+        .loading { display: none; position: fixed; bottom: 20px; right: 20px; max-width: calc(100vw - 40px); background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: 10px; font-size: 12px; font-weight: 500; box-shadow: 0 6px 24px rgba(0,0,0,.3); z-index: 2000; }
+        button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
         @keyframes pulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
     </style>
 </head>
@@ -175,7 +180,7 @@
             <div class="input-group"><label>Fonte da Interface</label><input type="text" id="cfg-font" placeholder="Inter"></div>
         </div>
 
-        <button class="btn" onclick="saveSetup()">Salvar e Recarregar</button>
+        <button class="btn" onclick="saveSetup()">Aplicar configurações</button>
     </div>
 </div>
 
@@ -234,7 +239,6 @@
                 <option value="view">Visualização</option>
             </select>
             <input type="range" class="zoom-slider" id="zoom-slider" min="40" max="240" value="140" oninput="changeZoom(this.value)" title="Zoom das capas">
-            <button class="btn-outline" onclick="syncToSupabase()">💾 Salvar</button>
         </div>
     </div>
     <div class="content-area" id="content-area"></div>
@@ -270,12 +274,27 @@ let dirty = false;          // há edição local ainda não enviada
 let saving = false;         // envio em andamento
 let resaveAfter = false;    // houve nova edição durante o envio
 let saveTimer = null;
+let savedEditState = null;
+let inFlightEditState = null;
+let inFlightRevision = null;
+let saveSequence = 0;
+let saveWatchdog = null;
 let draggedListId = null;
 let draggedListNode = null;
 
 // Toda alteração local passa por aqui: carimba, marca como pendente e salva sozinho (debounce).
+function editState(data = rootData) {
+    return JSON.stringify({ Lists: data.Lists, Settings: data.Settings },
+        (key, value) => key.startsWith('_') ? undefined : value);
+}
+
 function markDirty() {
     normalizeTierColors(rootData.Lists);
+    if (!saving && savedEditState !== null && editState() === savedEditState) {
+        dirty = false;
+        clearTimeout(saveTimer);
+        return;
+    }
     rootData.UpdatedAt = Math.max(Date.now(), (rootData.UpdatedAt || 0) + 1);
     dirty = true;
     clearTimeout(saveTimer);
@@ -298,6 +317,7 @@ function applySettings() {
     document.documentElement.style.setProperty('--card-width', `${cardZoom}px`);
     document.getElementById('zoom-slider').value = cardZoom;
     document.body.classList.toggle('view-only', cfgInteractionMode === 'view');
+    document.body.classList.toggle('drag-mode', cfgInteractionMode === 'drag');
     document.body.classList.toggle('double-move-mode', cfgInteractionMode === 'double');
     applySidebarState();
     const interactionMode = document.getElementById('interaction-mode');
@@ -323,6 +343,7 @@ function changeZoom(v) {
     localStorage.setItem('cardZoom', cardZoom);
     const slider = document.getElementById('zoom-slider');
     if (slider) slider.value = cardZoom;
+    requestAnimationFrame(updateTierHeaderWidth);
 }
 
 function changeTierLayout(mode) {
@@ -345,8 +366,9 @@ if (playniteLocal) {
     document.getElementById('supa-key').closest('.input-group').style.display = 'none';
     applySettings();
     const reload = document.createElement('button');
-    reload.textContent = 'Recarregar';
-    reload.className = 'save-btn';
+    reload.textContent = 'Atualizar';
+    reload.title = 'Busca as listas e configurações salvas no Playnite. Não salva alterações.';
+    reload.className = 'btn-outline';
     reload.onclick = () => {
         if (saving || (dirty && !confirm('Descartar as alterações não salvas e recarregar as listas locais?'))) return;
         clearTimeout(saveTimer);
@@ -355,6 +377,20 @@ if (playniteLocal) {
         window.requestPlayniteData();
     };
     document.querySelector('.actions').appendChild(reload);
+    const admin = document.createElement('button');
+    admin.textContent = 'Biblioteca, vínculos e sincronização';
+    admin.className = 'btn-outline';
+    admin.style.width = '100%';
+    admin.style.marginTop = '12px';
+    admin.onclick = async () => {
+        if (dirty || saving) { alert('Aguarde a gravação das alterações antes de abrir a administração.'); return; }
+        try {
+            const result = JSON.parse(await sendPlayniteRequest(JSON.stringify({ Type: 'admin' })));
+            if (!result.Ok) throw new Error('Administração indisponível');
+            document.getElementById('setup-modal').style.display = 'none';
+        } catch (error) { console.error(error); alert('Não foi possível abrir a administração do Playnite.'); }
+    };
+    document.querySelector('#setup-modal .modal-content').appendChild(admin);
 } else if (url && key) {
     document.getElementById('setup-modal').style.display = 'none';
     document.getElementById('close-setup').style.display = 'block';
@@ -407,6 +443,7 @@ function saveSetup() {
         rootData.Settings.TierLayoutMode = cfgTierLayout;
         rootData.Settings.ShowGameNames = cfgGameNames;
         rootData.Settings.ShowGameSource = cfgGameSource;
+        rootData.Settings.ShowMetacritic = cfgMeta;
     }
     applySettings();
     document.getElementById('setup-modal').style.display = 'none';
@@ -476,6 +513,7 @@ async function loadData(isAuto) {
             const expanded = collectExpanded(rootData.Lists);
             const scrollTop = document.getElementById('content-area').scrollTop;
             rootData = parsed;
+            savedEditState = editState(parsed);
             if (!localStorage.getItem('cfgGameNames') && rootData.Settings && rootData.Settings.ShowGameNames !== undefined) {
                 cfgGameNames = rootData.Settings.ShowGameNames !== false;
             }
@@ -571,7 +609,7 @@ function gameScore(id) {
     return Number.isFinite(n) ? n : -1;
 }
 
-function getSortedGameIds(list, sortModeOverride = null) {
+function getSortedGameIds(list, sortModeOverride = null, applySearch = true) {
     let ids = Array.from(list?.GameIds || []);
     const mode = normalizeSortMode(sortModeOverride ?? list?.SortOrder);
 
@@ -589,7 +627,7 @@ function getSortedGameIds(list, sortModeOverride = null) {
         });
     }
 
-    if (currentSearch.trim()) {
+    if (applySearch && currentSearch.trim()) {
         const q = currentSearch.trim().toLocaleLowerCase();
         ids = ids.filter(id => gameName(id).toLocaleLowerCase().includes(q));
     }
@@ -702,6 +740,7 @@ function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed;
     localStorage.setItem('sidebarCollapsed', sidebarCollapsed);
     applySidebarState();
+    requestAnimationFrame(updateTierHeaderWidth);
 }
 
 function renderSidebar() {
@@ -718,7 +757,6 @@ function renderListGroup(lists, container, isRoot) {
         const item = document.createElement('div');
         item.className = 'list-item' + (currentListId === list.Id ? ' active' : '');
         item.dataset.listId = list.Id;
-        if (!isRoot) item.style.paddingLeft = '12px';
 
         item.innerHTML = `
             <span class="chevron ${hasChildren ? (isExpanded ? 'open' : '') : 'empty'}"
@@ -1025,6 +1063,7 @@ function updateTierHeaderWidth() {
     const headers = Array.from(area.querySelectorAll('.tier-header'));
     if (!headers.length) {
         area.style.removeProperty('--tier-header-width');
+        area.style.removeProperty('--tier-row-height');
         return;
     }
 
@@ -1044,11 +1083,26 @@ function updateTierHeaderWidth() {
         max = Math.max(max, measured);
     });
     area.style.setProperty('--tier-header-width', `${max}px`);
+    equalizeTierHeights();
+}
+
+function equalizeTierHeights() {
+    const area = document.getElementById('content-area');
+    if (!area) return;
+    // Mede sem a altura compartilhada anterior: permite diminuir com o zoom ou o filtro.
+    area.style.removeProperty('--tier-row-height');
+    const rows = Array.from(area.querySelectorAll('.tier-row'));
+    if (!rows.length) return;
+    const height = Math.ceil(Math.max(...rows.map(row => row.getBoundingClientRect().height)));
+    area.style.setProperty('--tier-row-height', `${height}px`);
 }
 
 
 window.addEventListener('resize', () => {
     requestAnimationFrame(updateTierHeaderWidth);
+});
+document.addEventListener('transitionend', e => {
+    if (e.propertyName === 'width' && e.target.classList.contains('sidebar')) requestAnimationFrame(updateTierHeaderWidth);
 });
 
 function applyTierLayoutDom() {
@@ -1199,11 +1253,12 @@ let moveFrame = 0;
 const wheelTargets = new WeakMap();
 document.addEventListener('wheel', e => {
     if (e.ctrlKey) return;
+    if (!e.shiftKey && Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
     const tier = e.target.closest?.('.tier-games.horizontal-scroll');
     if (!tier || tier.scrollWidth <= tier.clientWidth) return;
     e.preventDefault();
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? tier.clientWidth : 1;
-    const delta = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * unit;
+    const delta = (e.shiftKey ? (e.deltaY || e.deltaX) : e.deltaX) * unit;
     let state = wheelTargets.get(tier);
     if (!state) { state = { target: tier.scrollLeft, frame: 0, time: 0 }; wheelTargets.set(tier, state); }
     if (!state.frame) state.target = tier.scrollLeft;
@@ -1263,11 +1318,41 @@ function ensureClickMoveLine() {
 }
 
 function clearClickMoveVisuals() {
+    clearDropPreview();
+    document.querySelectorAll('.click-move-source').forEach(el => el.classList.remove('click-move-source'));
+    clickMove?.sourceCard?.classList.remove('move-source-hidden');
+}
+
+function clearDropPreview() {
     const line = document.getElementById('click-move-line');
     if (line) line.style.display = 'none';
-    document.querySelectorAll('.click-move-source, .click-move-target').forEach(el => {
-        el.classList.remove('click-move-source', 'click-move-target');
+    document.querySelectorAll('.click-move-target, .move-gap').forEach(el => {
+        el.classList.remove('click-move-target', 'move-gap');
+        el.style.removeProperty('--insert-shift');
     });
+    dropPreviewKey = null;
+    document.querySelectorAll('.card-drop-slot').forEach(el => el.remove());
+    requestAnimationFrame(equalizeTierHeights);
+}
+
+let dropPreviewKey = null;
+
+function baseCardRect(card) {
+    const r = card.getBoundingClientRect();
+    const transform = getComputedStyle(card).transform;
+    const dx = transform && transform !== 'none' ? new DOMMatrixReadOnly(transform).m41 : 0;
+    return { left: r.left - dx, right: r.right - dx, top: r.top, bottom: r.bottom, height: r.height };
+}
+
+function nearestInsertionCard(holder, x, y) {
+    const candidates = Array.from(holder.querySelectorAll('.game-card'))
+        .filter(card => card.dataset.id !== clickMove.id)
+        .map(card => ({ card, rect: baseCardRect(card) }));
+    if (!candidates.length) return null;
+    const distance = r => Math.max(r.top - y, 0, y - r.bottom) * 10000 + Math.max(r.left - x, 0, x - r.right);
+    candidates.sort((a, b) => distance(a.rect) - distance(b.rect));
+    const { card, rect } = candidates[0];
+    return { targetId: card.dataset.id, after: x > (rect.left + rect.right) / 2 };
 }
 
 function startDoubleClickMove(card, e, pointerDrag = false) {
@@ -1282,8 +1367,9 @@ function startDoubleClickMove(card, e, pointerDrag = false) {
     e.stopPropagation();
     const ghost = createClickMoveGhost(card);
     const r = card.getBoundingClientRect();
-    clickMove = { id: card.dataset.id, sourceId, ghost, sourceCard: card, pointerDrag };
+    clickMove = { id: card.dataset.id, sourceId, ghost, sourceCard: card, pointerDrag, width: r.width, height: r.height };
     card.classList.add('click-move-source');
+    card.classList.add('move-source-hidden');
     ghost.style.left = (e.clientX || (r.left + r.width / 2)) + 'px';
     ghost.style.top = (e.clientY || (r.top + r.height / 2)) + 'px';
     document.body.classList.add('click-move-active');
@@ -1309,64 +1395,50 @@ function getGameMoveTarget(x, y) {
 
     const card = el.closest ? el.closest('.game-card') : null;
     const sidebarItem = el.closest ? el.closest('.list-item') : null;
-    const holder = el.closest ? el.closest('[data-list-id]') : null;
+    const holder = el.closest ? (el.closest('[data-list-id]') || el.closest('.tier-row')?.querySelector('.tier-games')) : null;
 
     if (sidebarItem && !card) {
         const targetId = sidebarItem.dataset.listId;
         const target = getListById(rootData.Lists, targetId);
         if (!target || targetId === clickMove.sourceId) return null;
-        return { toId: targetId, targetId: null, after: false };
+        return { toId: targetId, targetId: null, after: false, region: 'sidebar' };
     }
 
     if (!holder) return null;
     const toId = holder.dataset.listId;
     const to = getListById(rootData.Lists, toId);
-    const displayed = getListById(rootData.Lists, currentListId);
-    const sortMode = displayed && displayed.IsTier && displayed.Children?.some(c => c.Id === toId)
-        ? normalizeSortMode(displayed.SortOrder) : normalizeSortMode(to?.SortOrder);
-    if (!to || (toId === clickMove.sourceId && sortMode !== 'Manual')) return null;
+    if (!to) return null;
+    const slot = el.closest?.('.card-drop-slot');
+    if (slot?.moveTarget) return slot.moveTarget;
 
-    if (card) {
-        const targetId = card.dataset.id;
-        if (!targetId || targetId === clickMove.id) return null;
-        const r = card.getBoundingClientRect();
-        const horizontal = !!card.closest('.horizontal-scroll');
-        const after = horizontal ? x > r.left + r.width / 2 : x > r.left + r.width / 2;
-        return { toId, targetId, after };
-    }
-
-    // Clique em espaço vazio da lista/tier: inserir no final.
-    return { toId, targetId: null, after: false };
+    if (card?.dataset.id === clickMove.id) return null;
+    // Coordenadas anteriores ao deslocamento evitam oscilação ao abrir o espaço.
+    const insertion = nearestInsertionCard(holder, x, y);
+    return { toId, ...(insertion || { targetId: null, after: false }), region: 'content' };
 }
 
 function updateDoubleClickMoveTarget(x, y) {
     if (!clickMove) return;
     const target = getGameMoveTarget(x, y);
-    clearClickMoveVisuals();
-    if (!target) return;
-
-    if (target.targetId) {
-        const targetEl = document.querySelector(`#content-area [data-list-id="${CSS.escape(target.toId)}"] .game-card[data-id="${CSS.escape(target.targetId)}"]`);
-        if (targetEl) {
-            targetEl.classList.add('click-move-target');
-            const r = targetEl.getBoundingClientRect();
-            const line = ensureClickMoveLine();
-            line.style.display = 'block';
-            if (targetEl.closest('.horizontal-scroll')) {
-                line.style.left = (target.after ? r.right - 2 : r.left - 2) + 'px';
-                line.style.top = Math.max(0, r.top - 2) + 'px';
-                line.style.width = '3px';
-                line.style.height = Math.max(8, r.height + 4) + 'px';
-            } else {
-                line.style.left = Math.max(0, r.left - 2) + 'px';
-                line.style.top = (target.after ? r.bottom - 2 : r.top - 2) + 'px';
-                line.style.width = Math.max(8, r.width + 4) + 'px';
-                line.style.height = '3px';
-            }
-        }
-    } else {
-        const holder = document.querySelector(`[data-list-id="${CSS.escape(target.toId)}"]`);
-        if (holder) holder.classList.add('click-move-target');
+    if (!target) { clearDropPreview(); return; }
+    const key = `${target.region}:${target.toId}:${target.targetId}:${target.after}`;
+    const changed = key !== dropPreviewKey;
+    if (changed) { clearDropPreview(); dropPreviewKey = key; }
+    if (target.region === 'sidebar') {
+        if (changed) document.querySelector(`.lists-container .list-item[data-list-id="${CSS.escape(target.toId)}"]`)?.classList.add('click-move-target');
+        return;
+    }
+    const holder = document.querySelector(`#content-area [data-list-id="${CSS.escape(target.toId)}"]`);
+    if (!holder) return;
+    const targetEl = target.targetId ? holder.querySelector(`.game-card[data-id="${CSS.escape(target.targetId)}"]`) : null;
+    if (changed) {
+        const slot = document.createElement('div');
+        slot.className = 'card-drop-slot';
+        slot.style.width = (clickMove.width || cardZoom) + 'px';
+        slot.style.height = (clickMove.height || cardZoom * 1.4) + 'px';
+        slot.moveTarget = target;
+        holder.insertBefore(slot, targetEl ? (target.after ? targetEl.nextSibling : targetEl) : null);
+        requestAnimationFrame(equalizeTierHeights);
     }
 }
 
@@ -1375,8 +1447,17 @@ function commitDoubleClickMove(target) {
     const from = getListById(rootData.Lists, clickMove.sourceId);
     const to = getListById(rootData.Lists, target.toId);
     if (!from || !to) return false;
-    if (from === to && normalizeSortMode(getListById(rootData.Lists, currentListId)?.SortOrder) !== 'Manual') return false;
     if (clickMove.id === target.targetId) return false;
+    if (!from.GameIds?.includes(clickMove.id)) return false;
+    if (target.targetId && !to.GameIds?.includes(target.targetId)) return false;
+    const displayed = getListById(rootData.Lists, currentListId);
+    const sortOwner = displayed?.IsTier ? displayed : to;
+    if (from === to && normalizeSortMode(sortOwner.SortOrder) !== 'Manual') {
+        // Converte a ordem completa, inclusive jogos ocultos pela busca, antes de reordenar.
+        const affected = sortOwner.IsTier ? [...(sortOwner.Children || []), sortOwner] : [sortOwner];
+        affected.forEach(list => { list.GameIds = getSortedGameIds(list, sortOwner.SortOrder, false); });
+        sortOwner.SortOrder = 'Manual';
+    }
 
     const scrollPositions = captureTierScrollPositions();
     from.GameIds = from.GameIds || [];
@@ -1408,6 +1489,7 @@ function initDoubleClickMove() {
     clickMoveInitialized = true;
 
     let pressed = null;
+    let suppressTouchClick = false;
     document.addEventListener('pointerdown', e => {
         const tier = e.target.closest?.('.tier-games.horizontal-scroll');
         const wheel = tier && wheelTargets.get(tier);
@@ -1415,17 +1497,39 @@ function initDoubleClickMove() {
         if (cfgInteractionMode !== 'drag' || e.button !== 0 || clickMove) return;
         const card = e.target.closest?.('#content-area .game-card');
         if (!card) return;
-        pressed = { card, x: e.clientX, y: e.clientY, id: e.pointerId };
+        pressed = { card, x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY, id: e.pointerId, touch: e.pointerType === 'touch', event: e };
         card.setPointerCapture(e.pointerId);
+        if (pressed.touch) pressed.timer = setTimeout(() => {
+            if (pressed && !pressed.panning) startDoubleClickMove(pressed.card, pressed.event, true);
+        }, 350);
     });
     document.addEventListener('pointermove', e => {
         if (!pressed || e.pointerId !== pressed.id || clickMove) return;
+        if (pressed.touch) {
+            const dx = e.clientX - pressed.x, dy = e.clientY - pressed.y;
+            if (!pressed.panning && Math.hypot(dx, dy) < 8) return;
+            if (!pressed.panning) {
+                clearTimeout(pressed.timer);
+                pressed.panning = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
+            }
+            const tier = pressed.card.closest('.tier-games.horizontal-scroll');
+            if (pressed.panning === 'horizontal' && tier) tier.scrollLeft -= e.clientX - pressed.lastX;
+            else document.getElementById('content-area').scrollTop -= e.clientY - pressed.lastY;
+            pressed.lastX = e.clientX; pressed.lastY = e.clientY;
+            e.preventDefault();
+            return;
+        }
         if (Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) < 8) return;
         startDoubleClickMove(pressed.card, e, true);
     });
     document.addEventListener('pointerup', e => {
         if (!pressed || e.pointerId !== pressed.id) return;
         const card = pressed.card;
+        clearTimeout(pressed.timer);
+        if (pressed.panning) {
+            suppressTouchClick = true;
+            setTimeout(() => { suppressTouchClick = false; }, 250);
+        }
         pressed = null;
         if (card.hasPointerCapture(e.pointerId)) card.releasePointerCapture(e.pointerId);
         if (!clickMove?.pointerDrag) return;
@@ -1433,8 +1537,8 @@ function initDoubleClickMove() {
         if (target) commitDoubleClickMove(target);
         cancelDoubleClickMove();
     });
-    document.addEventListener('pointercancel', () => { pressed = null; cancelDoubleClickMove(); });
-    window.addEventListener('blur', () => { pressed = null; cancelDoubleClickMove(); });
+    document.addEventListener('pointercancel', () => { clearTimeout(pressed?.timer); pressed = null; if (clickMove?.pointerDrag) cancelDoubleClickMove(); });
+    window.addEventListener('blur', () => { clearTimeout(pressed?.timer); pressed = null; cancelDoubleClickMove(); });
 
     document.addEventListener('dblclick', e => {
         if (cfgInteractionMode !== 'double') return;
@@ -1454,6 +1558,7 @@ function initDoubleClickMove() {
     }, { passive: true });
 
     document.addEventListener('click', e => {
+        if (suppressTouchClick) { e.preventDefault(); e.stopPropagation(); return; }
         if (!clickMove) return;
         if (clickMove.pointerDrag) return;
         if (e.target.closest && e.target.closest('#setup-modal, #edit-modal, #sidebar-toggle, .sidebar-settings, input, select, button')) return;
@@ -1480,17 +1585,41 @@ initDoubleClickMove();
 // ──────────────────────────────────────────────
 // Save to Supabase
 // ──────────────────────────────────────────────
-// manual = true quando vem do botão "Salvar" (mostra erro); o autosave tenta de novo em silêncio.
+// Edições são salvas automaticamente; falhas mantêm a edição pendente.
 async function syncToSupabase(manual = true) {
     clearTimeout(saveTimer);
-    if (saving) { resaveAfter = true; return; }
+    const state = editState();
+    if (saving) { resaveAfter = state !== inFlightEditState; return; }
+    if (!dirty || (savedEditState !== null && state === savedEditState)) {
+        dirty = false;
+        resaveAfter = false;
+        return;
+    }
     saving = true;
+    inFlightEditState = state;
+    inFlightRevision = ++saveSequence;
     const ind = document.getElementById('loading-indicator');
     ind.style.display = 'block';
     ind.textContent = 'Salvando...';
     if (playniteLocal) {
-        CefSharp.PostMessage(JSON.stringify({ Type: 'save', BaseUpdatedAt: hostStamp,
-            Revision: rootData.UpdatedAt, Data: { Lists: rootData.Lists, Settings: rootData.Settings } }));
+        const request = inFlightRevision;
+        saveWatchdog = setTimeout(() => {
+            if (saving && inFlightRevision === request) {
+                saving = false;
+                ind.textContent = 'Gravação não confirmada. Atualize antes de continuar.';
+                console.error('Playnite não confirmou o envio', request);
+            }
+        }, 15000);
+        try {
+            // Serializa antes de aguardar o binding: edições durante o envio ficam para o próximo.
+            const json = JSON.stringify({ Type: 'save', BaseUpdatedAt: hostStamp,
+                Revision: request, Data: { Lists: rootData.Lists, Settings: rootData.Settings } });
+            const result = JSON.parse(await sendPlayniteRequest(json));
+            window.playniteSaveResult(request, result.UpdatedAt, result.Ok === true);
+        } catch (error) {
+            console.error(error);
+            window.playniteSaveResult(request, hostStamp, false);
+        }
         return;
     }
     let ok = false;
@@ -1507,6 +1636,7 @@ async function syncToSupabase(manual = true) {
         });
         if (!res.ok) throw new Error('POST failed');
         ok = true;
+        savedEditState = state;
         // Só considera salvo se não houve nova edição durante o envio.
         if (rootData.UpdatedAt === stamp) dirty = false;
     } catch (e) {
@@ -1519,13 +1649,27 @@ async function syncToSupabase(manual = true) {
     if (resaveAfter) { resaveAfter = false; if (dirty) syncToSupabase(false); }
 }
 
-window.requestPlayniteData = () => {
-    if (playniteLocal) CefSharp.PostMessage(JSON.stringify({ Type: 'ready' }));
+async function sendPlayniteRequest(json) {
+    await CefSharp.BindObjectAsync('playniteBridge');
+    return window.playniteBridge.send(json);
+}
+
+window.requestPlayniteData = async () => {
+    if (!playniteLocal) return;
+    try {
+        const data = JSON.parse(await sendPlayniteRequest(JSON.stringify({ Type: 'ready' })));
+        window.receivePlayniteData(data);
+    } catch (error) {
+        console.error('Falha ao consultar o Playnite', error);
+    }
 };
 
 window.receivePlayniteData = data => {
     if (!playniteLocal || dirty || saving || clickMove) return;
+    clearTimeout(saveWatchdog);
+    document.getElementById('loading-indicator').style.display = 'none';
     rootData = data;
+    savedEditState = editState(data);
     hostStamp = data.UpdatedAt || 0;
     cfgTierLayout = data.Settings.TierLayoutMode || 'Wrap';
     cfgMeta = data.Settings.ShowMetacritic !== false;
@@ -1545,16 +1689,24 @@ window.receivePlayniteData = data => {
 };
 
 window.playniteSaveResult = (revision, stamp, ok) => {
+    if (Number(revision) !== Number(inFlightRevision)) return;
+    clearTimeout(saveWatchdog);
     saving = false;
     const ind = document.getElementById('loading-indicator');
     ind.style.display = 'none';
     if (!ok) {
+        ind.style.display = 'block';
+        ind.textContent = 'Não foi possível salvar. Atualize antes de continuar.';
         alert('Não foi possível salvar nas listas locais. Verifique o log do Playnite; se as listas mudaram em outra tela, recarregue a página antes de repetir.');
         return;
     }
     hostStamp = stamp;
-    if (rootData.UpdatedAt === revision) { dirty = false; rootData.UpdatedAt = stamp; }
-    if (resaveAfter || dirty) { resaveAfter = false; syncToSupabase(false); }
+    savedEditState = inFlightEditState;
+    dirty = editState() !== savedEditState;
+    if (!dirty) rootData.UpdatedAt = stamp;
+    resaveAfter = false;
+    if (dirty) syncToSupabase(false);
+    else window.requestPlayniteData();
 };
 </script>
 </body>
