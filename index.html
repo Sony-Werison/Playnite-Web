@@ -332,7 +332,9 @@ function changeTierLayout(mode) {
         rootData.Settings.TierLayoutMode = cfgTierLayout;
         markDirty();
     }
-    if (currentListId) selectList(currentListId, true);
+    // Não recria centenas de cards/Sortable só para mudar o layout.
+    // A troca deve ser instantânea e preservar a posição horizontal.
+    applyTierLayoutDom();
 }
 
 // Init
@@ -1043,6 +1045,29 @@ window.addEventListener('resize', () => {
     requestAnimationFrame(updateTierHeaderWidth);
 });
 
+// Sortable é um recurso opcional para o modo Drag. A renderização da página
+// nunca pode depender da inicialização dele: se o CDN estiver indisponível ou
+// houver uma exceção interna, os jogos continuam sendo exibidos.
+function createSortable(el, options) {
+    if (!el || typeof Sortable !== 'function') return null;
+    try {
+        return new Sortable(el, options);
+    } catch (err) {
+        console.warn('ListManager: Sortable não pôde ser inicializado.', err);
+        return null;
+    }
+}
+
+function applyTierLayoutDom() {
+    const horizontal = cfgTierLayout === 'HorizontalScroll';
+    document.querySelectorAll('#content-area .tier-games').forEach(el => {
+        el.classList.toggle('horizontal-scroll', horizontal);
+    });
+    requestAnimationFrame(() => {
+        updateTierHeaderWidth();
+    });
+}
+
 // ──────────────────────────────────────────────
 // Select & render list
 // ──────────────────────────────────────────────
@@ -1112,7 +1137,7 @@ function selectList(id, preserveSearch = false) {
             row.innerHTML = `<div class="tier-header" style="background:${child.HexColor || '#444'};color:${isDark(child.HexColor) ? '#fff' : '#111'}">${esc(child.Name)}</div>
                              <div class="${gamesClass}" data-list-id="${child.Id}">${getSortedGameIds(child, tierSortMode).map(generateCard).join('')}</div>`;
             area.appendChild(row);
-            const sg = new Sortable(row.querySelector('.tier-games'), {
+            const sg = createSortable(row.querySelector('.tier-games'), {
                 group: { name: 'tier', pull: true, put: tierSortMode === 'Manual' },
                 animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
                 disabled: tierSortMode !== 'Manual' || cfgInteractionMode !== 'drag',
@@ -1143,7 +1168,7 @@ function selectList(id, preserveSearch = false) {
                     selectList(currentListId, true);
                 }
             });
-            sortables.push(sg);
+            if (sg) sortables.push(sg);
         });
 
         // Jogos que pertencem diretamente à lista-mãe aparecem como uma tier especial
@@ -1155,7 +1180,7 @@ function selectList(id, preserveSearch = false) {
             row.innerHTML = `<div class="tier-header">Pendentes</div>
                              <div class="${gamesClass}" data-list-id="${list.Id}">${getSortedGameIds(list, tierSortMode).map(generateCard).join('')}</div>`;
             area.appendChild(row);
-            const sg = new Sortable(row.querySelector('.tier-games'), {
+            const sg = createSortable(row.querySelector('.tier-games'), {
                 group: { name: 'tier', pull: true, put: tierSortMode === 'Manual' },
                 animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
                 disabled: tierSortMode !== 'Manual' || cfgInteractionMode !== 'drag',
@@ -1182,7 +1207,7 @@ function selectList(id, preserveSearch = false) {
                     selectList(currentListId, true);
                 }
             });
-            sortables.push(sg);
+            if (sg) sortables.push(sg);
         }
     } else {
         // Normal grid — collect all GameIds (own + children) if it's a parent list
@@ -1193,7 +1218,7 @@ function selectList(id, preserveSearch = false) {
         ids = getSortedGameIds(list);
         grid.innerHTML = ids.map(generateCard).join('');
         area.appendChild(grid);
-        const sg = new Sortable(grid, {
+        const sg = createSortable(grid, {
             animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
             disabled: normalizeSortMode(list.SortOrder) !== 'Manual' || cfgInteractionMode !== 'drag',
             setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
@@ -1210,7 +1235,7 @@ function selectList(id, preserveSearch = false) {
                 markDirty();
             }
         });
-        sortables.push(sg);
+        if (sg) sortables.push(sg);
     }
     initCardDrag();
     requestAnimationFrame(() => {
