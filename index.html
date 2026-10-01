@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minhas Listas - Playnite Web</title>
     <link id="font-link" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <style>
         :root {
             --bg: #0F111A;
@@ -108,8 +107,7 @@
         body.view-only .game-card { cursor: default; }
         body.view-only .sortable-chosen, body.view-only .sortable-ghost { box-shadow: none !important; }
         body.click-move-active { cursor: grabbing; user-select: none; }
-        body.click-move-active .main-content { flex: 1 1 0%; width: 0; min-width: 0; }
-        .click-move-ghost { position: fixed; z-index: 3000; pointer-events: none; opacity: .82; transform: translate(-50%, -50%) scale(.96); box-shadow: 0 16px 36px rgba(0,0,0,.45); border-radius: 8px; }
+        .game-card.click-move-ghost { position: fixed; z-index: 3000; pointer-events: none; opacity: .82; transform: translate(-50%, -50%) scale(.96); box-shadow: 0 16px 36px rgba(0,0,0,.45); border-radius: 8px; }
         .click-move-source { opacity: 1 !important; outline: 3px solid var(--accent) !important; outline-offset: 3px; box-shadow: 0 0 0 5px rgba(139,124,255,.18), 0 10px 28px rgba(0,0,0,.45) !important; transform: translateY(-3px) scale(1.025); z-index: 10; }
         .click-move-target { outline: 2px solid var(--accent) !important; outline-offset: -2px; }
         .click-move-line { position: fixed; z-index: 2999; pointer-events: none; background: var(--accent); border-radius: 3px; box-shadow: 0 0 8px rgba(139,124,255,.55); display: none; }
@@ -119,7 +117,7 @@
         #btn-tier-toggle { padding: 7px 10px; min-width: 0; }
         .btn-outline:hover { background: var(--card); }
         .btn-outline.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-        .content-area { flex: 1 1 0%; width: 0; overflow-y: scroll; padding: 24px 28px; min-width: 0; scrollbar-gutter: stable; }
+        .content-area { flex: 1 1 0%; align-self: stretch; min-height: 0; overflow-y: scroll; padding: 24px 28px; min-width: 0; scrollbar-gutter: stable; }
 
         /* Grid */
         .games-grid { display: flex; flex-wrap: wrap; gap: 16px; align-content: flex-start; }
@@ -132,7 +130,7 @@
         .tier-row.pending-tier .tier-header { background: #555B6E !important; color: #fff !important; }
 
         /* Game Card */
-        .game-card { background: var(--card); border-radius: 8px; overflow: hidden; width: var(--card-width); flex-shrink: 0; border: 1px solid transparent; cursor: grab; position: relative; transition: transform 0.15s, box-shadow 0.15s; }
+        .game-card { background: var(--card); border-radius: 8px; overflow: hidden; width: var(--card-width); flex-shrink: 0; border: 1px solid transparent; cursor: grab; position: relative; touch-action: none; transition: transform 0.15s, box-shadow 0.15s; }
         .game-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.35); border-color: var(--border); }
         .game-cover { height: calc(var(--card-width) * 1.4); background: #2D3243; display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 700; color: rgba(255,255,255,0.15); background-size: cover; background-position: center; }
         .metacritic { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; background: rgba(0,0,0,0.75); color: white; border: 2px solid; }
@@ -253,6 +251,8 @@ let cfgGameNames = localStorage.getItem('cfgGameNames') !== 'false';
 let cfgGameSource = localStorage.getItem('cfgGameSource') !== 'false';
 let cfgFont = localStorage.getItem('cfgFont') || 'Inter';
 let cfgTierLayout = localStorage.getItem('cfgTierLayout') || 'Wrap';
+const playniteLocal = new URLSearchParams(location.search).get('playnite') === '1';
+let hostStamp = 0;
 let cfgInteractionMode = localStorage.getItem('cfgInteractionMode') || (localStorage.getItem('cfgInputMode') === 'touch' ? 'view' : 'drag');
 let sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
 let draggedGameId = null;
@@ -263,7 +263,7 @@ let rootData = { Lists: [], Games: [], Settings: {} };
 let gamesMap = {};
 let currentListId = null;
 let currentSearch = '';
-let sortables = [];
+
 let lastDataString = '';
 let editingListId = null;
 let dirty = false;          // há edição local ainda não enviada
@@ -276,7 +276,7 @@ let draggedListNode = null;
 // Toda alteração local passa por aqui: carimba, marca como pendente e salva sozinho (debounce).
 function markDirty() {
     normalizeTierColors(rootData.Lists);
-    rootData.UpdatedAt = Date.now();
+    rootData.UpdatedAt = Math.max(Date.now(), (rootData.UpdatedAt || 0) + 1);
     dirty = true;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => syncToSupabase(false), 700);
@@ -313,7 +313,7 @@ function changeInteractionMode(mode) {
     cfgInteractionMode = mode;
     localStorage.setItem('cfgInteractionMode', cfgInteractionMode);
     applySettings();
-    // O modo pode alterar draggable/Sortable e os listeners de clique duplo.
+    cancelDoubleClickMove();
     if (currentListId) selectList(currentListId, true);
 }
 
@@ -332,13 +332,30 @@ function changeTierLayout(mode) {
         rootData.Settings.TierLayoutMode = cfgTierLayout;
         markDirty();
     }
-    // Não recria centenas de cards/Sortable só para mudar o layout.
+    // Não recria os cards só para mudar o layout.
     // A troca deve ser instantânea e preservar a posição horizontal.
     applyTierLayoutDom();
 }
 
 // Init
-if (url && key) {
+if (playniteLocal) {
+    document.getElementById('setup-modal').style.display = 'none';
+    document.getElementById('close-setup').style.display = 'block';
+    document.getElementById('supa-url').closest('.input-group').style.display = 'none';
+    document.getElementById('supa-key').closest('.input-group').style.display = 'none';
+    applySettings();
+    const reload = document.createElement('button');
+    reload.textContent = 'Recarregar';
+    reload.className = 'save-btn';
+    reload.onclick = () => {
+        if (saving || (dirty && !confirm('Descartar as alterações não salvas e recarregar as listas locais?'))) return;
+        clearTimeout(saveTimer);
+        dirty = false;
+        cancelDoubleClickMove();
+        window.requestPlayniteData();
+    };
+    document.querySelector('.actions').appendChild(reload);
+} else if (url && key) {
     document.getElementById('setup-modal').style.display = 'none';
     document.getElementById('close-setup').style.display = 'block';
     applySettings();
@@ -397,7 +414,11 @@ function saveSetup() {
     // Não recarrega do Supabase quando apenas uma preferência local mudou.
     // O reload imediato anteriormente trazia a configuração antiga da nuvem
     // e desfazia o layout recém-selecionado.
-    if (url && key && (endpointChanged || !hadData)) {
+    if (playniteLocal) {
+        rootData.Settings.ShowMetacritic = cfgMeta;
+        markDirty();
+        if (currentListId) selectList(currentListId, true);
+    } else if (url && key && (endpointChanged || !hadData)) {
         loadData(false);
     } else if (url && key && hadData) {
         markDirty();
@@ -421,6 +442,7 @@ function applyExpanded(lists, map) {
 }
 
 async function loadData(isAuto) {
+    if (playniteLocal) { window.requestPlayniteData(); return; }
     // Edição local pendente ou envio em andamento: a nuvem ainda não tem as alterações, então
     // recarregar agora desfaria o que o usuário acabou de fazer.
     if (isAuto && (dirty || saving)) return;
@@ -979,7 +1001,7 @@ function generateCard(id) {
     }
     const src = g.Source || g.Platform || '';
 
-    return `<div class="game-card" data-id="${id}" draggable="${cfgInteractionMode === 'drag'}">
+    return `<div class="game-card" data-id="${id}" draggable="false">
         <div class="game-cover" ${bgStyle}>${g.CoverUrl ? '' : esc(initial)}</div>
         ${meta}
         ${(cfgGameNames || cfgGameSource) ? `<div class="game-info">
@@ -991,23 +1013,7 @@ function generateCard(id) {
 
 function initCardDrag() {
     document.querySelectorAll('.game-card').forEach(c => {
-        c.draggable = cfgInteractionMode === 'drag';
-        if (cfgInteractionMode !== 'drag') return;
-        c.addEventListener('dragstart', e => {
-            const holder = c.closest('[data-list-id]');
-            draggedGameId = c.dataset.id || null;
-            draggedGameFromId = holder ? holder.dataset.listId : currentListId;
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/x-from', draggedGameFromId || '');
-            e.dataTransfer.setData('text/plain', draggedGameId || '');
-            c.classList.add('dragging');
-        });
-        c.addEventListener('dragend', () => {
-            c.classList.remove('dragging');
-            draggedGameId = null;
-            draggedGameFromId = null;
-            clearListDragVisuals();
-        });
+        c.draggable = false;
     });
     initDoubleClickMove();
 }
@@ -1044,19 +1050,6 @@ function updateTierHeaderWidth() {
 window.addEventListener('resize', () => {
     requestAnimationFrame(updateTierHeaderWidth);
 });
-
-// Sortable é um recurso opcional para o modo Drag. A renderização da página
-// nunca pode depender da inicialização dele: se o CDN estiver indisponível ou
-// houver uma exceção interna, os jogos continuam sendo exibidos.
-function createSortable(el, options) {
-    if (!el || typeof Sortable !== 'function') return null;
-    try {
-        return new Sortable(el, options);
-    } catch (err) {
-        console.warn('ListManager: Sortable não pôde ser inicializado.', err);
-        return null;
-    }
-}
 
 function applyTierLayoutDom() {
     const horizontal = cfgTierLayout === 'HorizontalScroll';
@@ -1120,8 +1113,6 @@ function selectList(id, preserveSearch = false) {
         tierBtn.style.display = 'none';
     }
 
-    sortables.forEach(s => s.destroy());
-    sortables = [];
     const area = document.getElementById('content-area');
     area.innerHTML = '';
 
@@ -1137,77 +1128,17 @@ function selectList(id, preserveSearch = false) {
             row.innerHTML = `<div class="tier-header" style="background:${child.HexColor || '#444'};color:${isDark(child.HexColor) ? '#fff' : '#111'}">${esc(child.Name)}</div>
                              <div class="${gamesClass}" data-list-id="${child.Id}">${getSortedGameIds(child, tierSortMode).map(generateCard).join('')}</div>`;
             area.appendChild(row);
-            const sg = createSortable(row.querySelector('.tier-games'), {
-                group: { name: 'tier', pull: true, put: tierSortMode === 'Manual' },
-                animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
-                disabled: tierSortMode !== 'Manual' || cfgInteractionMode !== 'drag',
-                setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
-                onEnd: evt => {
-                    if (evt.from === evt.to && evt.oldIndex === evt.newIndex) return;
-                    const gid = evt.item.dataset.id;
-                    const fromId = evt.from.dataset.listId;
-                    const toId = evt.to.dataset.listId;
-                    const from = getListById(rootData.Lists, fromId);
-                    const to   = getListById(rootData.Lists, toId);
-                    if (!from || !to) return;
-
-                    // Usa os IDs reais em vez de oldIndex/newIndex, porque a pesquisa pode
-                    // ter escondido cards e, nesse caso, o índice visual não é o índice persistido.
-                    const oldIndex = from.GameIds.indexOf(gid);
-                    if (oldIndex >= 0) from.GameIds.splice(oldIndex, 1);
-                    if (!to.GameIds) to.GameIds = [];
-
-                    const nextEl = evt.to.children[evt.newIndex + 1];
-                    const nextId = nextEl ? nextEl.dataset.id : null;
-                    let insertIndex = nextId ? to.GameIds.indexOf(nextId) : to.GameIds.length;
-                    if (insertIndex < 0) insertIndex = to.GameIds.length;
-                    to.GameIds.splice(insertIndex, 0, gid);
-                    markDirty();
-                    renderSidebar();
-                    document.getElementById('header-count').textContent = `${countGames(getListById(rootData.Lists, currentListId))} jogos`;
-                    selectList(currentListId, true);
-                }
-            });
-            if (sg) sortables.push(sg);
         });
 
         // Jogos que pertencem diretamente à lista-mãe aparecem como uma tier especial
         // de pendentes, sempre por último, e podem ser arrastados para qualquer sublista.
-        if ((list.GameIds || []).length) {
+        {
             const row = document.createElement('div');
             row.className = 'tier-row pending-tier';
             const gamesClass = cfgTierLayout === 'HorizontalScroll' ? 'tier-games horizontal-scroll' : 'tier-games';
             row.innerHTML = `<div class="tier-header">Pendentes</div>
                              <div class="${gamesClass}" data-list-id="${list.Id}">${getSortedGameIds(list, tierSortMode).map(generateCard).join('')}</div>`;
             area.appendChild(row);
-            const sg = createSortable(row.querySelector('.tier-games'), {
-                group: { name: 'tier', pull: true, put: tierSortMode === 'Manual' },
-                animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
-                disabled: tierSortMode !== 'Manual' || cfgInteractionMode !== 'drag',
-                setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
-                onEnd: evt => {
-                    if (evt.from === evt.to && evt.oldIndex === evt.newIndex) return;
-                    const gid = evt.item.dataset.id;
-                    const fromId = evt.from.dataset.listId;
-                    const toId = evt.to.dataset.listId;
-                    const from = getListById(rootData.Lists, fromId);
-                    const to = getListById(rootData.Lists, toId);
-                    if (!from || !to) return;
-                    const oldIndex = (from.GameIds || []).indexOf(gid);
-                    if (oldIndex >= 0) from.GameIds.splice(oldIndex, 1);
-                    if (!to.GameIds) to.GameIds = [];
-                    const nextEl = evt.to.children[evt.newIndex + 1];
-                    const nextId = nextEl ? nextEl.dataset.id : null;
-                    let insertIndex = nextId ? to.GameIds.indexOf(nextId) : to.GameIds.length;
-                    if (insertIndex < 0) insertIndex = to.GameIds.length;
-                    to.GameIds.splice(insertIndex, 0, gid);
-                    markDirty();
-                    renderSidebar();
-                    document.getElementById('header-count').textContent = `${countGames(getListById(rootData.Lists, currentListId))} jogos`;
-                    selectList(currentListId, true);
-                }
-            });
-            if (sg) sortables.push(sg);
         }
     } else {
         // Normal grid — collect all GameIds (own + children) if it's a parent list
@@ -1218,24 +1149,6 @@ function selectList(id, preserveSearch = false) {
         ids = getSortedGameIds(list);
         grid.innerHTML = ids.map(generateCard).join('');
         area.appendChild(grid);
-        const sg = createSortable(grid, {
-            animation: 130, ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
-            disabled: normalizeSortMode(list.SortOrder) !== 'Manual' || cfgInteractionMode !== 'drag',
-            setData: (dt, el) => dt.setData('text/plain', el.dataset.id),
-            onEnd: evt => {
-                if (evt.oldIndex === evt.newIndex) return;
-                const gid = evt.item.dataset.id;
-                const oldIndex = list.GameIds.indexOf(gid);
-                if (oldIndex >= 0) list.GameIds.splice(oldIndex, 1);
-                const nextEl = evt.to.children[evt.newIndex + 1];
-                const nextId = nextEl ? nextEl.dataset.id : null;
-                let insertIndex = nextId ? list.GameIds.indexOf(nextId) : list.GameIds.length;
-                if (insertIndex < 0) insertIndex = list.GameIds.length;
-                list.GameIds.splice(insertIndex, 0, gid);
-                markDirty();
-            }
-        });
-        if (sg) sortables.push(sg);
     }
     initCardDrag();
     requestAnimationFrame(() => {
@@ -1279,6 +1192,55 @@ function moveGameToList(gid, fromId, toId) {
 // no próprio jogo não alteram nada e mantêm o transporte ativo.
 let clickMove = null;
 let clickMoveInitialized = false;
+let moveCursor = null;
+let moveFrame = 0;
+
+// Roda do mouse, Shift+roda e gesto lateral usam o mesmo caminho na web e no app.
+const wheelTargets = new WeakMap();
+document.addEventListener('wheel', e => {
+    if (e.ctrlKey) return;
+    const tier = e.target.closest?.('.tier-games.horizontal-scroll');
+    if (!tier || tier.scrollWidth <= tier.clientWidth) return;
+    e.preventDefault();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? tier.clientWidth : 1;
+    const delta = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * unit;
+    let state = wheelTargets.get(tier);
+    if (!state) { state = { target: tier.scrollLeft, frame: 0, time: 0 }; wheelTargets.set(tier, state); }
+    if (!state.frame) state.target = tier.scrollLeft;
+    state.target = Math.max(0, Math.min(tier.scrollWidth - tier.clientWidth, state.target + delta));
+    if (state.frame) return;
+    state.time = performance.now();
+    const step = now => {
+        const factor = 1 - Math.exp(-Math.min(50, now - state.time) / 110);
+        state.time = now;
+        const distance = state.target - tier.scrollLeft;
+        if (!tier.isConnected || !tier.classList.contains('horizontal-scroll') || Math.abs(distance) < .6) {
+            tier.scrollLeft = state.target; state.frame = 0; return;
+        }
+        tier.scrollLeft += distance * factor;
+        state.frame = requestAnimationFrame(step);
+    };
+    state.frame = requestAnimationFrame(step);
+}, { passive: false });
+
+function followMoveCursor() {
+    if (!clickMove || !moveCursor) { moveFrame = 0; return; }
+    const { x, y } = moveCursor;
+    const el = document.elementFromPoint(x, y);
+    const tier = el?.closest?.('.tier-games.horizontal-scroll');
+    if (tier) {
+        const r = tier.getBoundingClientRect(), edge = 55;
+        if (x > r.right - edge) tier.scrollLeft += Math.min(18, (x - r.right + edge) * .3);
+        else if (x < r.left + edge) tier.scrollLeft -= Math.min(18, (r.left + edge - x) * .3);
+    }
+    const area = document.getElementById('content-area'), r = area.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+        if (y > r.bottom - 45) area.scrollTop += 12;
+        else if (y < r.top + 45) area.scrollTop -= 12;
+    }
+    updateDoubleClickMoveTarget(x, y);
+    moveFrame = requestAnimationFrame(followMoveCursor);
+}
 
 function createClickMoveGhost(card) {
     const ghost = card.cloneNode(true);
@@ -1308,23 +1270,25 @@ function clearClickMoveVisuals() {
     });
 }
 
-function startDoubleClickMove(card, e) {
-    if (cfgInteractionMode !== 'double' || clickMove) return;
+function startDoubleClickMove(card, e, pointerDrag = false) {
+    if ((!pointerDrag && cfgInteractionMode !== 'double') || clickMove) return;
     const holder = card.closest('[data-list-id]');
     if (!holder) return;
     const sourceId = holder.dataset.listId;
     const source = getListById(rootData.Lists, sourceId);
-    if (!source || normalizeSortMode(source.SortOrder) !== 'Manual') return;
+    if (!source) return;
 
     e.preventDefault();
     e.stopPropagation();
     const ghost = createClickMoveGhost(card);
     const r = card.getBoundingClientRect();
-    clickMove = { id: card.dataset.id, sourceId, ghost, sourceCard: card };
+    clickMove = { id: card.dataset.id, sourceId, ghost, sourceCard: card, pointerDrag };
     card.classList.add('click-move-source');
     ghost.style.left = (e.clientX || (r.left + r.width / 2)) + 'px';
     ghost.style.top = (e.clientY || (r.top + r.height / 2)) + 'px';
     document.body.classList.add('click-move-active');
+    moveCursor = { x: e.clientX, y: e.clientY };
+    moveFrame = requestAnimationFrame(followMoveCursor);
 }
 
 function cancelDoubleClickMove() {
@@ -1333,6 +1297,9 @@ function cancelDoubleClickMove() {
     clearClickMoveVisuals();
     document.body.classList.remove('click-move-active');
     clickMove = null;
+    cancelAnimationFrame(moveFrame);
+    moveFrame = 0;
+    moveCursor = null;
 }
 
 function getGameMoveTarget(x, y) {
@@ -1347,14 +1314,17 @@ function getGameMoveTarget(x, y) {
     if (sidebarItem && !card) {
         const targetId = sidebarItem.dataset.listId;
         const target = getListById(rootData.Lists, targetId);
-        if (!target || targetId === clickMove.sourceId || normalizeSortMode(target.SortOrder) !== 'Manual') return null;
+        if (!target || targetId === clickMove.sourceId) return null;
         return { toId: targetId, targetId: null, after: false };
     }
 
     if (!holder) return null;
     const toId = holder.dataset.listId;
     const to = getListById(rootData.Lists, toId);
-    if (!to || normalizeSortMode(to.SortOrder) !== 'Manual') return null;
+    const displayed = getListById(rootData.Lists, currentListId);
+    const sortMode = displayed && displayed.IsTier && displayed.Children?.some(c => c.Id === toId)
+        ? normalizeSortMode(displayed.SortOrder) : normalizeSortMode(to?.SortOrder);
+    if (!to || (toId === clickMove.sourceId && sortMode !== 'Manual')) return null;
 
     if (card) {
         const targetId = card.dataset.id;
@@ -1376,7 +1346,7 @@ function updateDoubleClickMoveTarget(x, y) {
     if (!target) return;
 
     if (target.targetId) {
-        const targetEl = document.querySelector(`.game-card[data-id="${CSS.escape(target.targetId)}"]`);
+        const targetEl = document.querySelector(`#content-area [data-list-id="${CSS.escape(target.toId)}"] .game-card[data-id="${CSS.escape(target.targetId)}"]`);
         if (targetEl) {
             targetEl.classList.add('click-move-target');
             const r = targetEl.getBoundingClientRect();
@@ -1404,7 +1374,8 @@ function commitDoubleClickMove(target) {
     if (!clickMove || !target) return false;
     const from = getListById(rootData.Lists, clickMove.sourceId);
     const to = getListById(rootData.Lists, target.toId);
-    if (!from || !to || normalizeSortMode(to.SortOrder) !== 'Manual') return false;
+    if (!from || !to) return false;
+    if (from === to && normalizeSortMode(getListById(rootData.Lists, currentListId)?.SortOrder) !== 'Manual') return false;
     if (clickMove.id === target.targetId) return false;
 
     const scrollPositions = captureTierScrollPositions();
@@ -1412,14 +1383,17 @@ function commitDoubleClickMove(target) {
     to.GameIds = to.GameIds || [];
     const oldIndex = from.GameIds.indexOf(clickMove.id);
     if (oldIndex < 0) return false;
-    from.GameIds.splice(oldIndex, 1);
-
     let insertIndex = to.GameIds.length;
     if (target.targetId) {
         const ti = to.GameIds.indexOf(target.targetId);
         if (ti < 0) return false;
         insertIndex = ti + (target.after ? 1 : 0);
     }
+    from.GameIds.splice(oldIndex, 1);
+    if (from === to && oldIndex < insertIndex) insertIndex--;
+    insertIndex -= to.GameIds.slice(0, insertIndex).filter(id => id === clickMove.id).length;
+    to.GameIds = to.GameIds.filter(id => id !== clickMove.id);
+    insertIndex = Math.min(insertIndex, to.GameIds.length);
     to.GameIds.splice(insertIndex, 0, clickMove.id);
     markDirty();
     renderSidebar();
@@ -1433,6 +1407,35 @@ function initDoubleClickMove() {
     if (clickMoveInitialized) return;
     clickMoveInitialized = true;
 
+    let pressed = null;
+    document.addEventListener('pointerdown', e => {
+        const tier = e.target.closest?.('.tier-games.horizontal-scroll');
+        const wheel = tier && wheelTargets.get(tier);
+        if (wheel?.frame) { cancelAnimationFrame(wheel.frame); wheel.frame = 0; }
+        if (cfgInteractionMode !== 'drag' || e.button !== 0 || clickMove) return;
+        const card = e.target.closest?.('#content-area .game-card');
+        if (!card) return;
+        pressed = { card, x: e.clientX, y: e.clientY, id: e.pointerId };
+        card.setPointerCapture(e.pointerId);
+    });
+    document.addEventListener('pointermove', e => {
+        if (!pressed || e.pointerId !== pressed.id || clickMove) return;
+        if (Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) < 8) return;
+        startDoubleClickMove(pressed.card, e, true);
+    });
+    document.addEventListener('pointerup', e => {
+        if (!pressed || e.pointerId !== pressed.id) return;
+        const card = pressed.card;
+        pressed = null;
+        if (card.hasPointerCapture(e.pointerId)) card.releasePointerCapture(e.pointerId);
+        if (!clickMove?.pointerDrag) return;
+        const target = getGameMoveTarget(e.clientX, e.clientY);
+        if (target) commitDoubleClickMove(target);
+        cancelDoubleClickMove();
+    });
+    document.addEventListener('pointercancel', () => { pressed = null; cancelDoubleClickMove(); });
+    window.addEventListener('blur', () => { pressed = null; cancelDoubleClickMove(); });
+
     document.addEventListener('dblclick', e => {
         if (cfgInteractionMode !== 'double') return;
         const card = e.target.closest ? e.target.closest('.game-card') : null;
@@ -1444,21 +1447,15 @@ function initDoubleClickMove() {
 
     document.addEventListener('pointermove', e => {
         if (!clickMove) return;
+        moveCursor = { x: e.clientX, y: e.clientY };
         clickMove.ghost.style.left = e.clientX + 'px';
         clickMove.ghost.style.top = e.clientY + 'px';
-        const el = document.elementFromPoint(e.clientX, e.clientY);
-        const tier = el && el.closest ? el.closest('.tier-games.horizontal-scroll') : null;
-        if (tier) {
-            const r = tier.getBoundingClientRect();
-            const edge = Math.min(90, Math.max(45, r.width * .16));
-            if (e.clientX > r.right - edge) tier.scrollLeft += Math.max(6, Math.round((e.clientX - (r.right - edge)) * .35));
-            else if (e.clientX < r.left + edge) tier.scrollLeft -= Math.max(6, Math.round(((r.left + edge) - e.clientX) * .35));
-        }
         updateDoubleClickMoveTarget(e.clientX, e.clientY);
     }, { passive: true });
 
     document.addEventListener('click', e => {
         if (!clickMove) return;
+        if (clickMove.pointerDrag) return;
         if (e.target.closest && e.target.closest('#setup-modal, #edit-modal, #sidebar-toggle, .sidebar-settings, input, select, button')) return;
         const target = getGameMoveTarget(e.clientX, e.clientY);
         // Qualquer clique fora de um destino válido, inclusive no próprio jogo, cancela.
@@ -1491,6 +1488,11 @@ async function syncToSupabase(manual = true) {
     const ind = document.getElementById('loading-indicator');
     ind.style.display = 'block';
     ind.textContent = 'Salvando...';
+    if (playniteLocal) {
+        CefSharp.PostMessage(JSON.stringify({ Type: 'save', BaseUpdatedAt: hostStamp,
+            Revision: rootData.UpdatedAt, Data: { Lists: rootData.Lists, Settings: rootData.Settings } }));
+        return;
+    }
     let ok = false;
     try {
         if (!rootData.UpdatedAt) rootData.UpdatedAt = Date.now();
@@ -1516,6 +1518,44 @@ async function syncToSupabase(manual = true) {
     setTimeout(() => { if (!saving) ind.style.display = 'none'; ind.textContent = 'Sincronizando...'; }, ok ? 800 : 0);
     if (resaveAfter) { resaveAfter = false; if (dirty) syncToSupabase(false); }
 }
+
+window.requestPlayniteData = () => {
+    if (playniteLocal) CefSharp.PostMessage(JSON.stringify({ Type: 'ready' }));
+};
+
+window.receivePlayniteData = data => {
+    if (!playniteLocal || dirty || saving || clickMove) return;
+    rootData = data;
+    hostStamp = data.UpdatedAt || 0;
+    cfgTierLayout = data.Settings.TierLayoutMode || 'Wrap';
+    cfgMeta = data.Settings.ShowMetacritic !== false;
+    cfgGameNames = data.Settings.ShowGameNames !== false;
+    cfgGameSource = data.Settings.ShowGameSource !== false;
+    gamesMap = {};
+    (data.Games || []).forEach(g => gamesMap[g.Id] = g);
+    applySettings();
+    renderSidebar();
+    const id = getListById(data.Lists, currentListId)?.Id || data.Lists[0]?.Id;
+    if (id) selectList(id, true);
+    else {
+        currentListId = null;
+        document.getElementById('content-area').innerHTML = '';
+        document.getElementById('main-header').style.visibility = 'hidden';
+    }
+};
+
+window.playniteSaveResult = (revision, stamp, ok) => {
+    saving = false;
+    const ind = document.getElementById('loading-indicator');
+    ind.style.display = 'none';
+    if (!ok) {
+        alert('Não foi possível salvar nas listas locais. Verifique o log do Playnite; se as listas mudaram em outra tela, recarregue a página antes de repetir.');
+        return;
+    }
+    hostStamp = stamp;
+    if (rootData.UpdatedAt === revision) { dirty = false; rootData.UpdatedAt = stamp; }
+    if (resaveAfter || dirty) { resaveAfter = false; syncToSupabase(false); }
+};
 </script>
 </body>
 </html>
