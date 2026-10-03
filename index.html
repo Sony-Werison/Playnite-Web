@@ -119,13 +119,13 @@
         #btn-tier-toggle { padding: 7px 10px; min-width: 0; }
         .btn-outline:hover { background: var(--card); }
         .btn-outline.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-        .content-area { flex: 1 1 0%; align-self: stretch; min-height: 0; overflow-y: scroll; padding: 24px 28px; min-width: 0; scrollbar-gutter: stable; }
+        .content-area { flex: 1 1 0%; align-self: stretch; min-height: 0; overflow-y: scroll; padding: 24px 28px; min-width: 0; scrollbar-gutter: stable; overflow-anchor: none; }
 
         /* Grid */
         .games-grid { display: flex; flex-wrap: wrap; gap: 16px; align-content: flex-start; }
 
         /* Tier rows */
-        .tier-row { margin-bottom: 16px; background: var(--panel); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); display: flex; min-height: var(--tier-row-height, 0px); }
+        .tier-row { margin-bottom: 16px; background: var(--panel); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); display: flex; }
         .tier-header { width: var(--tier-header-width, 40px); flex: 0 0 var(--tier-header-width, 40px); display: flex; align-items: center; justify-content: center; padding: clamp(4px, calc(var(--card-width) * 0.08), 12px); font-weight: 700; font-size: clamp(10px, calc(var(--card-width) * 0.11), 15px); text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,0.4); word-break: break-word; }
         .tier-games { flex: 1; padding: 8px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; min-height: calc(var(--card-width) * 1.4 + 18px); min-width: 0; position: relative; }
         .tier-games:empty::after { content: 'Sem jogos'; position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: var(--dim); font-size: 12px; pointer-events: none; }
@@ -143,6 +143,7 @@
         .meta-red { border-color: #f55; }
         .game-info { padding: 9px 10px 10px; }
         .game-title { font-weight: 600; font-size: 12px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        body.wrap-game-names .game-title { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
         .game-platform { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         .list-item { position: relative; }
@@ -175,6 +176,7 @@
             <div class="section-title">Interface</div>
             <div class="toggle-group"><input type="checkbox" id="cfg-meta"><label for="cfg-meta">Mostrar nota Metacritic nas capas</label></div>
             <div class="toggle-group"><input type="checkbox" id="cfg-game-names"><label for="cfg-game-names">Mostrar nomes dos jogos</label></div>
+            <div class="toggle-group"><input type="checkbox" id="cfg-wrap-game-names"><label for="cfg-wrap-game-names">Quebrar linha nos nomes dos jogos</label></div>
             <div class="toggle-group"><input type="checkbox" id="cfg-game-source"><label for="cfg-game-source">Mostrar biblioteca/origem</label></div>
             <div class="input-group"><label>Layout dos jogos nas tiers</label><select id="cfg-tier-layout" onchange="changeTierLayout(this.value)"><option value="Wrap">Quebrar linha</option><option value="HorizontalScroll">Scroll horizontal</option></select></div>
             <div class="input-group"><label>Fonte da Interface</label><input type="text" id="cfg-font" placeholder="Inter"></div>
@@ -252,6 +254,7 @@ let url = localStorage.getItem('supaUrl') || '';
 let key = localStorage.getItem('supaKey') || '';
 let cfgMeta = localStorage.getItem('cfgMeta') !== 'false';
 let cfgGameNames = localStorage.getItem('cfgGameNames') !== 'false';
+let cfgWrapGameNames = localStorage.getItem('cfgWrapGameNames') === 'true';
 let cfgGameSource = localStorage.getItem('cfgGameSource') !== 'false';
 let cfgFont = localStorage.getItem('cfgFont') || 'Inter';
 let cfgTierLayout = localStorage.getItem('cfgTierLayout') || 'Wrap';
@@ -317,6 +320,7 @@ function applySettings() {
     document.documentElement.style.setProperty('--card-width', `${cardZoom}px`);
     document.getElementById('zoom-slider').value = cardZoom;
     document.body.classList.toggle('view-only', cfgInteractionMode === 'view');
+    document.body.classList.toggle('wrap-game-names', cfgWrapGameNames);
     document.body.classList.toggle('drag-mode', cfgInteractionMode === 'drag');
     document.body.classList.toggle('double-move-mode', cfgInteractionMode === 'double');
     applySidebarState();
@@ -324,7 +328,7 @@ function applySettings() {
     if (interactionMode) interactionMode.value = cfgInteractionMode;
     const sortSelect = document.getElementById('sort-select');
     const tierToggle = document.getElementById('btn-tier-toggle');
-    if (sortSelect) sortSelect.disabled = cfgInteractionMode === 'view';
+    if (sortSelect) sortSelect.disabled = false;
     if (tierToggle) tierToggle.disabled = cfgInteractionMode === 'view';
 }
 
@@ -409,6 +413,7 @@ function openSetup() {
     document.getElementById('supa-key').value = key;
     document.getElementById('cfg-meta').checked = cfgMeta;
     document.getElementById('cfg-game-names').checked = cfgGameNames;
+    document.getElementById('cfg-wrap-game-names').checked = cfgWrapGameNames;
     document.getElementById('cfg-game-source').checked = cfgGameSource;
     document.getElementById('cfg-font').value = cfgFont;
     document.getElementById('cfg-tier-layout').value = cfgTierLayout;
@@ -427,6 +432,7 @@ function saveSetup() {
     key = document.getElementById('supa-key').value.trim();
     cfgMeta = document.getElementById('cfg-meta').checked;
     cfgGameNames = document.getElementById('cfg-game-names').checked;
+    cfgWrapGameNames = document.getElementById('cfg-wrap-game-names').checked;
     cfgGameSource = document.getElementById('cfg-game-source').checked;
     cfgFont = document.getElementById('cfg-font').value.trim() || 'Inter';
     cfgTierLayout = document.getElementById('cfg-tier-layout').value || 'Wrap';
@@ -434,6 +440,7 @@ function saveSetup() {
     localStorage.setItem('supaKey', key);
     localStorage.setItem('cfgMeta', cfgMeta);
     localStorage.setItem('cfgGameNames', cfgGameNames);
+    localStorage.setItem('cfgWrapGameNames', cfgWrapGameNames);
     localStorage.setItem('cfgGameSource', cfgGameSource);
     localStorage.setItem('cfgFont', cfgFont);
     localStorage.setItem('cfgTierLayout', cfgTierLayout);
@@ -442,6 +449,7 @@ function saveSetup() {
     if (rootData && rootData.Settings) {
         rootData.Settings.TierLayoutMode = cfgTierLayout;
         rootData.Settings.ShowGameNames = cfgGameNames;
+        rootData.Settings.WrapGameNames = cfgWrapGameNames;
         rootData.Settings.ShowGameSource = cfgGameSource;
         rootData.Settings.ShowMetacritic = cfgMeta;
     }
@@ -520,6 +528,10 @@ async function loadData(isAuto) {
             if (!localStorage.getItem('cfgGameSource') && rootData.Settings && rootData.Settings.ShowGameSource !== undefined) {
                 cfgGameSource = rootData.Settings.ShowGameSource !== false;
             }
+            if (!localStorage.getItem('cfgWrapGameNames') && rootData.Settings) {
+                cfgWrapGameNames = rootData.Settings.WrapGameNames === true;
+            }
+            applySettings();
             applyExpanded(rootData.Lists, expanded);
             gamesMap = {};
             (rootData.Games || []).forEach(g => gamesMap[g.Id] = g);
@@ -640,7 +652,6 @@ function changeCurrentSearch(value) {
 }
 
 function changeSortMode(value) {
-    if (cfgInteractionMode === 'view') return;
     const list = getListById(rootData.Lists, currentListId);
     if (!list) return;
     list.SortOrder = value;
@@ -1039,11 +1050,12 @@ function generateCard(id) {
     }
     const src = g.Source || g.Platform || '';
 
-    return `<div class="game-card" data-id="${id}" draggable="false">
+    const tooltip = `${g.Name || '?'}${src ? '\nBiblioteca: ' + src : ''}`;
+    return `<div class="game-card" data-id="${id}" draggable="false" title="${esc(tooltip)}">
         <div class="game-cover" ${bgStyle}>${g.CoverUrl ? '' : esc(initial)}</div>
         ${meta}
         ${(cfgGameNames || cfgGameSource) ? `<div class="game-info">
-            ${cfgGameNames ? `<div class="game-title" title="${esc(g.Name)}">${esc(g.Name)}</div>` : ''}
+            ${cfgGameNames ? `<div class="game-title">${esc(g.Name)}</div>` : ''}
             ${cfgGameSource ? `<div class="game-platform">${esc(src)}</div>` : ''}
         </div>` : ''}
     </div>`;
@@ -1063,7 +1075,6 @@ function updateTierHeaderWidth() {
     const headers = Array.from(area.querySelectorAll('.tier-header'));
     if (!headers.length) {
         area.style.removeProperty('--tier-header-width');
-        area.style.removeProperty('--tier-row-height');
         return;
     }
 
@@ -1083,18 +1094,6 @@ function updateTierHeaderWidth() {
         max = Math.max(max, measured);
     });
     area.style.setProperty('--tier-header-width', `${max}px`);
-    equalizeTierHeights();
-}
-
-function equalizeTierHeights() {
-    const area = document.getElementById('content-area');
-    if (!area) return;
-    // Mede sem a altura compartilhada anterior: permite diminuir com o zoom ou o filtro.
-    area.style.removeProperty('--tier-row-height');
-    const rows = Array.from(area.querySelectorAll('.tier-row'));
-    if (!rows.length) return;
-    const height = Math.ceil(Math.max(...rows.map(row => row.getBoundingClientRect().height)));
-    area.style.setProperty('--tier-row-height', `${height}px`);
 }
 
 
@@ -1138,6 +1137,8 @@ function restoreTierScrollPositions(positions) {
 
 function selectList(id, preserveSearch = false) {
     const tierScrollPositions = captureTierScrollPositions();
+    const area = document.getElementById('content-area');
+    const scrollTop = currentListId === id ? area.scrollTop : 0;
     const list = getListById(rootData.Lists, id);
     if (!list) return;
     if (!preserveSearch && currentListId !== id) currentSearch = '';
@@ -1167,7 +1168,6 @@ function selectList(id, preserveSearch = false) {
         tierBtn.style.display = 'none';
     }
 
-    const area = document.getElementById('content-area');
     area.innerHTML = '';
 
     // Decide view: Tier if root + IsTier + has children; otherwise normal grid
@@ -1205,8 +1205,11 @@ function selectList(id, preserveSearch = false) {
         area.appendChild(grid);
     }
     initCardDrag();
+    area.scrollTop = scrollTop;
     requestAnimationFrame(() => {
+        if (currentListId !== id) return;
         updateTierHeaderWidth();
+        area.scrollTop = scrollTop;
         restoreTierScrollPositions(tierScrollPositions);
     });
 }
@@ -1332,7 +1335,6 @@ function clearDropPreview() {
     });
     dropPreviewKey = null;
     document.querySelectorAll('.card-drop-slot').forEach(el => el.remove());
-    requestAnimationFrame(equalizeTierHeights);
 }
 
 let dropPreviewKey = null;
@@ -1368,6 +1370,13 @@ function startDoubleClickMove(card, e, pointerDrag = false) {
     const ghost = createClickMoveGhost(card);
     const r = card.getBoundingClientRect();
     clickMove = { id: card.dataset.id, sourceId, ghost, sourceCard: card, pointerDrag, width: r.width, height: r.height };
+    // A origem não encolhe enquanto a prévia muda de destino: isso deslocaria
+    // todas as tiers abaixo e poderia limitar o scroll antes de terminar o arraste.
+    clickMove.sourceRow = card.closest('.tier-row');
+    if (clickMove.sourceRow) {
+        clickMove.sourceRowMinHeight = clickMove.sourceRow.style.minHeight;
+        clickMove.sourceRow.style.minHeight = clickMove.sourceRow.getBoundingClientRect().height + 'px';
+    }
     card.classList.add('click-move-source');
     card.classList.add('move-source-hidden');
     ghost.style.left = (e.clientX || (r.left + r.width / 2)) + 'px';
@@ -1381,6 +1390,7 @@ function cancelDoubleClickMove() {
     if (!clickMove) return;
     if (clickMove.ghost) clickMove.ghost.remove();
     clearClickMoveVisuals();
+    if (clickMove.sourceRow) clickMove.sourceRow.style.minHeight = clickMove.sourceRowMinHeight;
     document.body.classList.remove('click-move-active');
     clickMove = null;
     cancelAnimationFrame(moveFrame);
@@ -1418,6 +1428,21 @@ function getGameMoveTarget(x, y) {
 }
 
 function updateDoubleClickMoveTarget(x, y) {
+    const area = document.getElementById('content-area');
+    const scrollTop = area.scrollTop;
+    const horizontal = Array.from(document.querySelectorAll('.tier-games.horizontal-scroll[data-list-id]'))
+        .map(el => ({ el, left: el.scrollLeft }));
+    try {
+        updateDropPreview(x, y);
+    } finally {
+        // Remover o espaço antigo pode limitar o scroll antes de inserir o novo.
+        // Restaura na mesma tarefa, após o layout final da prévia.
+        area.scrollTop = scrollTop;
+        horizontal.forEach(({ el, left }) => { el.scrollLeft = left; });
+    }
+}
+
+function updateDropPreview(x, y) {
     if (!clickMove) return;
     const target = getGameMoveTarget(x, y);
     if (!target) { clearDropPreview(); return; }
@@ -1438,7 +1463,6 @@ function updateDoubleClickMoveTarget(x, y) {
         slot.style.height = (clickMove.height || cardZoom * 1.4) + 'px';
         slot.moveTarget = target;
         holder.insertBefore(slot, targetEl ? (target.after ? targetEl.nextSibling : targetEl) : null);
-        requestAnimationFrame(equalizeTierHeights);
     }
 }
 
@@ -1674,6 +1698,7 @@ window.receivePlayniteData = data => {
     cfgTierLayout = data.Settings.TierLayoutMode || 'Wrap';
     cfgMeta = data.Settings.ShowMetacritic !== false;
     cfgGameNames = data.Settings.ShowGameNames !== false;
+    cfgWrapGameNames = data.Settings.WrapGameNames === true;
     cfgGameSource = data.Settings.ShowGameSource !== false;
     gamesMap = {};
     (data.Games || []).forEach(g => gamesMap[g.Id] = g);
