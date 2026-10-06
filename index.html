@@ -26,6 +26,7 @@
         .timeline-pending { --year-accent:#8d9bad !important; }
         .timeline-pending .timeline-year-heading h3 { font-size:22px; }
         .timeline-horizontal { overflow-x:auto; padding-bottom:16px; overscroll-behavior-x:contain; }
+        .timeline-scroll-nav { display:flex; justify-content:flex-end; gap:8px; margin:0 0 18px; }
         .timeline-horizontal .timeline-track { display:flex; align-items:flex-start; padding:8px 0 0; min-width:max-content; }
         .timeline-horizontal .timeline-year { flex:0 0 clamp(340px,48vw,620px); width:clamp(340px,48vw,620px); border-left:0; border-top:2px solid #3b5262; padding:26px 18px 0 0; }
         .timeline-horizontal .timeline-year::before { top:-8px; left:22px; }
@@ -352,9 +353,7 @@ function esc(v) {
 
 function applySettings() {
     document.documentElement.style.setProperty('--font-family', `${cfgFont}, sans-serif`);
-    if (cfgFont && cfgFont !== 'Inter') {
-        document.getElementById('font-link').href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(cfgFont)}:wght@400;500;600;700&display=swap`;
-    }
+    document.getElementById('font-link').href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(cfgFont)}:wght@400;500;600;700&display=swap`;
     document.documentElement.style.setProperty('--card-width', `${cardZoom}px`);
     document.getElementById('zoom-slider').value = cardZoom;
     document.body.classList.toggle('view-only', cfgInteractionMode === 'view');
@@ -368,10 +367,26 @@ function applySettings() {
     if (sortSelect) sortSelect.disabled = false;
 }
 
+// The shared document is authoritative in both hosts; localStorage is only a startup cache.
+function applySharedDisplaySettings(settings = {}) {
+    cfgTierLayout = settings.TierLayoutMode === 'HorizontalScroll' ? 'HorizontalScroll' : 'Wrap';
+    cfgMeta = settings.ShowMetacritic !== false;
+    cfgGameNames = settings.ShowGameNames !== false;
+    cfgWrapGameNames = settings.WrapGameNames === true;
+    cfgGameSource = settings.ShowGameSource !== false;
+    cfgInteractionMode = ['drag','double','view'].includes(settings.InteractionMode) ? settings.InteractionMode : 'drag';
+    cardZoom = Math.max(40, Math.min(240, Number(settings.CardZoom) || 140));
+    cfgFont = settings.InterfaceFont || 'Inter';
+    for (const [key,value] of Object.entries({cfgTierLayout,cfgMeta,cfgGameNames,cfgWrapGameNames,cfgGameSource,cfgInteractionMode,cardZoom,cfgFont})) localStorage.setItem(key,value);
+}
+
 function changeInteractionMode(mode) {
     if (!['drag', 'double', 'view'].includes(mode)) mode = 'drag';
     cfgInteractionMode = mode;
     localStorage.setItem('cfgInteractionMode', cfgInteractionMode);
+    rootData.Settings ||= {};
+    rootData.Settings.InteractionMode = cfgInteractionMode;
+    markDirty();
     applySettings();
     cancelDoubleClickMove();
     if (currentListId) selectList(currentListId, true);
@@ -381,6 +396,9 @@ function changeZoom(v) {
     cardZoom = Math.max(40, Math.min(240, parseInt(v) || 140));
     document.documentElement.style.setProperty('--card-width', `${cardZoom}px`);
     localStorage.setItem('cardZoom', cardZoom);
+    rootData.Settings ||= {};
+    rootData.Settings.CardZoom = cardZoom;
+    markDirty();
     const slider = document.getElementById('zoom-slider');
     if (slider) slider.value = cardZoom;
     requestAnimationFrame(updateTierHeaderWidth);
@@ -398,25 +416,30 @@ function changeTierLayout(mode) {
     applyTierLayoutDom();
 }
 
+function installReloadButton() {
+    const reload = document.createElement('button');
+    reload.textContent = 'Atualizar';
+    reload.title = 'Busca as listas e configurações salvas. Não salva alterações.';
+    reload.className = 'btn-outline';
+    reload.onclick = () => {
+        if (saving || (dirty && !confirm('Descartar as alterações não salvas e recarregar as listas?'))) return;
+        clearTimeout(saveTimer);
+        dirty = false;
+        cancelDoubleClickMove();
+        if (playniteLocal) window.requestPlayniteData();
+        else loadData(false);
+    };
+    document.querySelector('.actions').appendChild(reload);
+}
+
 // Init
+installReloadButton();
 if (playniteLocal) {
     document.getElementById('setup-modal').style.display = 'none';
     document.getElementById('close-setup').style.display = 'block';
     document.getElementById('supa-url').closest('.input-group').style.display = 'none';
     document.getElementById('supa-key').closest('.input-group').style.display = 'none';
     applySettings();
-    const reload = document.createElement('button');
-    reload.textContent = 'Atualizar';
-    reload.title = 'Busca as listas e configurações salvas no Playnite. Não salva alterações.';
-    reload.className = 'btn-outline';
-    reload.onclick = () => {
-        if (saving || (dirty && !confirm('Descartar as alterações não salvas e recarregar as listas locais?'))) return;
-        clearTimeout(saveTimer);
-        dirty = false;
-        cancelDoubleClickMove();
-        window.requestPlayniteData();
-    };
-    document.querySelector('.actions').appendChild(reload);
     const admin = document.createElement('button');
     admin.textContent = 'Biblioteca, vínculos e sincronização';
     admin.className = 'btn-outline';
@@ -488,6 +511,9 @@ function saveSetup() {
         rootData.Settings.WrapGameNames = cfgWrapGameNames;
         rootData.Settings.ShowGameSource = cfgGameSource;
         rootData.Settings.ShowMetacritic = cfgMeta;
+        rootData.Settings.InteractionMode = cfgInteractionMode;
+        rootData.Settings.CardZoom = cardZoom;
+        rootData.Settings.InterfaceFont = cfgFont;
     }
     applySettings();
     document.getElementById('setup-modal').style.display = 'none';
@@ -540,10 +566,6 @@ async function loadData(isAuto) {
 
             const raw = typeof data[0].lists_json === 'string' ? data[0].lists_json : JSON.stringify(data[0].lists_json);
             let parsed = typeof data[0].lists_json === 'string' ? JSON.parse(data[0].lists_json) : data[0].lists_json;
-            if (parsed.Settings && parsed.Settings.TierLayoutMode) {
-                cfgTierLayout = parsed.Settings.TierLayoutMode === 'HorizontalScroll' ? 'HorizontalScroll' : 'Wrap';
-                localStorage.setItem('cfgTierLayout', cfgTierLayout);
-            }
             const colorsChanged = normalizeTierColors(parsed.Lists);
 
             if (isAuto) {
@@ -558,15 +580,7 @@ async function loadData(isAuto) {
             const scrollTop = document.getElementById('content-area').scrollTop;
             rootData = parsed;
             savedEditState = editState(parsed);
-            if (!localStorage.getItem('cfgGameNames') && rootData.Settings && rootData.Settings.ShowGameNames !== undefined) {
-                cfgGameNames = rootData.Settings.ShowGameNames !== false;
-            }
-            if (!localStorage.getItem('cfgGameSource') && rootData.Settings && rootData.Settings.ShowGameSource !== undefined) {
-                cfgGameSource = rootData.Settings.ShowGameSource !== false;
-            }
-            if (!localStorage.getItem('cfgWrapGameNames') && rootData.Settings) {
-                cfgWrapGameNames = rootData.Settings.WrapGameNames === true;
-            }
+            applySharedDisplaySettings(rootData.Settings || {});
             applySettings();
             applyExpanded(rootData.Lists, expanded);
             gamesMap = {};
@@ -937,7 +951,6 @@ function toggleExpand(id) {
 // Context menu (right-click on list)
 // ──────────────────────────────────────────────
 function showCtxMenu(e, list) {
-    if (cfgInteractionMode === 'view') return;
     e.stopPropagation();
     const menu = document.getElementById('ctx-menu');
     menu.innerHTML = '';
@@ -1114,7 +1127,6 @@ function changeListView(view) {
     selectList(list.Id, true);
 }
 function openCreateList(parentId = null) {
-    if (cfgInteractionMode === 'view') return;
     if (parentId && listView(getListById(rootData.Lists, parentId) || {}) === 'Timeline') { addTimelineYear(parentId); return; }
     openEditModal(null);
     creatingList = true;
@@ -1301,7 +1313,7 @@ function restoreTierScrollPositions(positions, revision = contentRenderRevision)
 
 function addTimelineYear(listId = currentListId) {
     const list = getListById(rootData.Lists, listId);
-    if (!list || cfgInteractionMode === 'view') return;
+    if (!list) return;
     const input = prompt('Ano da linha do tempo (1 a 9999):', String(new Date().getFullYear()));
     if (input === null) return;
     const year = Number(input);
@@ -1314,7 +1326,6 @@ function addTimelineYear(listId = currentListId) {
     selectList(list.Id, true);
 }
 function deleteTimelineYear(id) {
-    if (cfgInteractionMode === 'view') return;
     const node = getListById(rootData.Lists, id);
     const parent = findParent(rootData.Lists, id);
     if (!node || !parent || !validYear(node.TimelineYear)) return;
@@ -1339,6 +1350,21 @@ function renderTimeline(list, area) {
     const scroll = document.createElement('div');
     scroll.className = list.TimelineOrientation === 'Horizontal' ? 'timeline-horizontal' : 'timeline-vertical';
     scroll.dataset.scrollListId = list.Id;
+    if (list.TimelineOrientation === 'Horizontal') {
+        const nav = document.createElement('div');
+        nav.className = 'timeline-scroll-nav';
+        for (const [label,direction] of [['← Anterior',-1],['Próximo →',1]]) {
+            const button = document.createElement('button');
+            button.className = 'btn-outline';
+            button.textContent = label;
+            button.onclick = () => {
+                stopHorizontalAnimation(scroll);
+                scroll.scrollBy({left:direction * Math.max(240,scroll.clientWidth * .7),behavior:'smooth'});
+            };
+            nav.appendChild(button);
+        }
+        timeline.appendChild(nav);
+    }
     const track = document.createElement('div');
     track.className = 'timeline-track';
     [...years, list].forEach(child => {
@@ -1347,7 +1373,7 @@ function renderTimeline(list, area) {
         row.className = 'timeline-year' + (pending ? ' timeline-pending' : '');
         row.style.setProperty('--year-accent', /^#[0-9a-f]{6}$/i.test(child.HexColor) ? child.HexColor : '#66c7ed');
         const gamesClass = cfgTierLayout === 'HorizontalScroll' ? 'tier-games horizontal-scroll' : 'tier-games';
-        const actions = !pending && cfgInteractionMode !== 'view' ? `<div class="timeline-year-actions"><button type="button" data-edit-year="${child.Id}" aria-label="Editar ano ${child.TimelineYear}">✎ Editar</button><button type="button" data-delete-year="${child.Id}" aria-label="Excluir ano ${child.TimelineYear}">✕ Excluir</button></div>` : '';
+        const actions = !pending ? `<div class="timeline-year-actions"><button type="button" data-edit-year="${child.Id}" aria-label="Editar ano ${child.TimelineYear}">✎ Editar</button><button type="button" data-delete-year="${child.Id}" aria-label="Excluir ano ${child.TimelineYear}">✕ Excluir</button></div>` : '';
         row.innerHTML = `<div class="timeline-panel"><div class="timeline-year-heading"><div><h3>${pending ? 'Sem ano' : child.TimelineYear}</h3><small>${(child.GameIds || []).length} jogos</small></div>${actions}</div><div class="${gamesClass}" data-list-id="${child.Id}" data-year="${pending ? '' : child.TimelineYear}">${getSortedGameIds(child, list.SortOrder).map(generateCard).join('')}</div></div>`;
         row.querySelector('[data-edit-year]')?.addEventListener('click', () => openEditModal(child.Id));
         row.querySelector('[data-delete-year]')?.addEventListener('click', () => deleteTimelineYear(child.Id));
@@ -1380,7 +1406,7 @@ function selectList(id, preserveSearch = false) {
 
     const view = listView(list);
     document.getElementById('view-select').value = view;
-    document.getElementById('add-year').style.display = view === 'Timeline' && cfgInteractionMode !== 'view' ? '' : 'none';
+    document.getElementById('add-year').style.display = view === 'Timeline' ? '' : 'none';
     for (const key of ['order','orientation']) {
         const control = document.getElementById(`timeline-${key}`);
         control.style.display = view === 'Timeline' ? '' : 'none';
@@ -1464,16 +1490,27 @@ let moveFrame = 0;
 
 // Roda do mouse, Shift+roda e gesto lateral usam o mesmo caminho na web e no app.
 const wheelTargets = new WeakMap();
+function stopHorizontalAnimation(element) {
+    if (!element) return;
+    const state = wheelTargets.get(element);
+    if (state?.frame) cancelAnimationFrame(state.frame);
+    wheelTargets.delete(element);
+    element.scrollTo?.({left:element.scrollLeft,behavior:'instant'});
+}
 document.addEventListener('wheel', e => {
     if (e.ctrlKey) return;
-    if (!e.shiftKey && Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-    const tier = e.target.closest?.('.tier-games.horizontal-scroll') || e.target.closest?.('.timeline-horizontal');
+    const lateral = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    const timeline = e.target.closest?.('.timeline-horizontal');
+    if (!lateral && !timeline?.classList?.contains('timeline-horizontal')) return;
+    const inner = e.target.closest?.('.tier-games.horizontal-scroll');
+    const tier = lateral && inner && inner.scrollWidth > inner.clientWidth ? inner : timeline;
     if (!tier || tier.scrollWidth <= tier.clientWidth) return;
     e.preventDefault();
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? tier.clientWidth : 1;
-    const delta = (e.shiftKey ? (e.deltaY || e.deltaX) : e.deltaX) * unit;
+    const delta = (e.shiftKey || !lateral ? (e.deltaY || e.deltaX) : e.deltaX) * unit;
     let state = wheelTargets.get(tier);
     if (!state) { state = { target: tier.scrollLeft, frame: 0, time: 0 }; wheelTargets.set(tier, state); }
+    if (!state.frame) tier.scrollTo?.({left:tier.scrollLeft,behavior:'instant'});
     if (!state.frame) state.target = tier.scrollLeft;
     state.target = Math.max(0, Math.min(tier.scrollWidth - tier.clientWidth, state.target + delta));
     if (state.frame) return;
@@ -1490,6 +1527,24 @@ document.addEventListener('wheel', e => {
     };
     state.frame = requestAnimationFrame(step);
 }, { passive: false });
+
+window.handlePlayniteWheel = ({x,y,deltaY,shiftKey}) => {
+    const clientX = x * window.innerWidth, clientY = y * window.innerHeight;
+    const target = document.elementFromPoint(clientX,clientY);
+    if (!target) return;
+    const event = new WheelEvent('wheel',{bubbles:true,cancelable:true,clientX,clientY,deltaY,shiftKey});
+    target.dispatchEvent(event);
+    if (event.defaultPrevented) return;
+    // Synthetic wheel events have no native default scroll. Reproduce it for
+    // vertical lists/modals, while the shared handler above owns horizontal scroll.
+    for (let element = target; element; element = element.parentElement) {
+        if (/(auto|scroll)/.test(getComputedStyle(element).overflowY) && element.scrollHeight > element.clientHeight) {
+            const before = element.scrollTop;
+            element.scrollTop += deltaY;
+            if (before !== element.scrollTop) return;
+        }
+    }
+};
 
 function followMoveCursor() {
     if (!clickMove || !moveCursor) { moveFrame = 0; return; }
@@ -1752,9 +1807,8 @@ function initDoubleClickMove() {
     let pressed = null;
     let suppressTouchClick = false;
     document.addEventListener('pointerdown', e => {
-        const tier = e.target.closest?.('.tier-games.horizontal-scroll');
-        const wheel = tier && wheelTargets.get(tier);
-        if (wheel?.frame) { cancelAnimationFrame(wheel.frame); wheel.frame = 0; }
+        const tier = e.target.closest?.('.tier-games.horizontal-scroll') || e.target.closest?.('.timeline-horizontal');
+        stopHorizontalAnimation(tier);
         if (cfgInteractionMode !== 'drag' || ![0, 2].includes(e.button) || clickMove) return;
         const card = e.target.closest?.('#content-area .game-card');
         if (!card) return;
@@ -1936,11 +1990,7 @@ window.receivePlayniteData = data => {
     rootData = data;
     savedEditState = editState(data);
     hostStamp = data.UpdatedAt || 0;
-    cfgTierLayout = data.Settings.TierLayoutMode || 'Wrap';
-    cfgMeta = data.Settings.ShowMetacritic !== false;
-    cfgGameNames = data.Settings.ShowGameNames !== false;
-    cfgWrapGameNames = data.Settings.WrapGameNames === true;
-    cfgGameSource = data.Settings.ShowGameSource !== false;
+    applySharedDisplaySettings(data.Settings || {});
     gamesMap = {};
     (data.Games || []).forEach(g => gamesMap[g.Id] = g);
     applySettings();
