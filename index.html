@@ -17,9 +17,6 @@
         .timeline-year-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 20px; }
         .timeline-year-heading h3 { color:var(--year-accent); font-size:30px; line-height:1.1; margin:0; font-weight:800; }
         .timeline-year-heading small { display:block; color:#9fb5c7; margin-top:6px; }
-        .timeline-year-actions { display:flex; gap:6px; }
-        .timeline-year-actions button { background:#203647; border:1px solid #385267; color:#c8e5f4; padding:7px 10px; border-radius:7px; cursor:pointer; }
-        .timeline-year-actions button:hover { background:#304b60; }
         .timeline-year .tier-games { padding:12px 20px 20px; gap:12px; }
         .timeline-year .tier-games:empty::after { content:'Arraste jogos para este ano'; }
         .timeline-pending .tier-games:empty::after { content:'Todos os jogos já estão organizados'; }
@@ -27,12 +24,13 @@
         .timeline-pending .timeline-year-heading h3 { font-size:22px; }
         .timeline-horizontal { overflow-x:auto; padding-bottom:16px; overscroll-behavior-x:contain; }
         .timeline-scroll-nav { display:flex; justify-content:flex-end; gap:8px; margin:0 0 18px; }
-        .timeline-horizontal .timeline-track { display:flex; align-items:flex-start; padding:8px 0 0; min-width:max-content; }
+        .timeline-horizontal .timeline-track { display:flex; align-items:flex-start; padding:16px 0 0; min-width:max-content; }
         .timeline-horizontal .timeline-year { flex:0 0 clamp(340px,48vw,620px); width:clamp(340px,48vw,620px); border-left:0; border-top:2px solid #3b5262; padding:26px 18px 0 0; }
         .timeline-horizontal .timeline-year::before { top:-8px; left:22px; }
-        @media(max-width:600px) { .timeline-track { padding-left:10px; } .timeline-year { padding-left:16px; } .timeline-year-heading { padding:14px; } .timeline-year-heading h3 { font-size:25px; } .timeline-year-actions button { padding:7px; } }
+        @media(max-width:600px) { .timeline-track { padding-left:10px; } .timeline-year { padding-left:16px; } .timeline-year-heading { padding:14px; } .timeline-year-heading h3 { font-size:25px; } }
         #game-remove-zone { display:none; position:fixed; bottom:12px; left:50%; transform:translateX(-50%); z-index:10000; padding:18px 36px; border:2px dashed #F2606A; border-radius:14px; background:#351e29; color:#fff; pointer-events:auto; }
         body.click-move-active #game-remove-zone { display:block; }
+        body.automatic-game-drag #game-remove-zone { display:none; }
         #game-remove-zone.active { background:#a42e44; border-style:solid; }
         :root {
             --bg: #0F111A;
@@ -86,6 +84,8 @@
         .sidebar.collapsed .sidebar-actions { width: 100%; justify-content: center; }
         .sidebar.collapsed .sidebar-settings { display: none; }
         .sidebar.collapsed .new-list-button { display:none; }
+        .sidebar-list-actions { display:flex; flex-direction:column; gap:8px; padding:12px; }
+        .sidebar.collapsed .sidebar-list-actions { display:none; }
         .sidebar-toggle { flex-shrink: 0; width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
         .sidebar-header { padding: 18px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
         .sidebar-header h1 { font-size: 16px; font-weight: 700; }
@@ -250,7 +250,10 @@
             <button class="btn-sm sidebar-settings" onclick="openSetup()">⚙</button>
         </div>
     </div>
-    <button class="btn-outline new-list-button" onclick="openCreateList()" style="margin:12px">＋ Nova lista</button>
+    <div class="sidebar-list-actions">
+        <button class="btn-outline new-list-button" onclick="openCreateList()">＋ Nova lista</button>
+        <button class="btn-outline" id="lists-expand-toggle" onclick="toggleAllLists()" aria-expanded="false">Expandir todas</button>
+    </div>
     <div class="lists-container" id="lists-container"></div>
 </div>
 
@@ -271,7 +274,6 @@
                 <option value="Metacritic">Metacritic</option>
             </select>
             <select id="view-select" class="sort-select" onchange="changeListView(this.value)" title="Visualização padrão desta lista"><option value="Grid">Grade</option><option value="Tier">Tierlist</option><option value="Timeline">Linha do tempo</option></select>
-            <button class="btn-outline" id="add-year" onclick="addTimelineYear()" style="display:none">＋ Ano</button>
             <select id="timeline-order" class="sort-select" title="Ordem dos anos" aria-label="Ordem dos anos" onchange="changeTimelineOption('TimelineOrder',this.value)" style="display:none"><option value="Ascending">Anos ↑ Crescente</option><option value="Descending">Anos ↓ Decrescente</option></select>
             <select id="timeline-orientation" class="sort-select" title="Orientação da linha do tempo" aria-label="Orientação da linha do tempo" onchange="changeTimelineOption('TimelineOrientation',this.value)" style="display:none"><option value="Vertical">Vertical</option><option value="Horizontal">Horizontal</option></select>
             <select class="interaction-select" id="interaction-mode" onchange="changeInteractionMode(this.value)" title="Modo de interação">
@@ -307,6 +309,12 @@ let cardZoom = Math.max(40, Math.min(240, parseInt(localStorage.getItem('cardZoo
 
 let rootData = { Lists: [], Games: [], Settings: {} };
 let gamesMap = {};
+const ALL_GAMES_LIST_ID = 'automatic-all-games';
+const allGamesList = { Id:ALL_GAMES_LIST_ID, Name:'Todos os jogos', HexColor:'#66c7ed', IsAutomatic:true, DefaultView:'Grid', SortOrder:'Alphabetical', GameIds:[], Children:[] };
+function refreshAllGamesList() {
+    allGamesList.GameIds = Object.keys(gamesMap);
+    allGamesList.SortOrder = normalizeSortMode(rootData.Settings?.AllGamesSortOrder || 'Alphabetical');
+}
 let currentListId = null;
 let currentSearch = '';
 
@@ -535,7 +543,7 @@ function saveSetup() {
 
 function collectExpanded(lists, map = {}) {
     (lists || []).forEach(l => {
-        if (l._expanded === false) map[l.Id] = false;
+        map[l.Id] = l._expanded === true;
         collectExpanded(l.Children, map);
     });
     return map;
@@ -543,7 +551,7 @@ function collectExpanded(lists, map = {}) {
 
 function applyExpanded(lists, map) {
     (lists || []).forEach(l => {
-        if (map[l.Id] === false) l._expanded = false;
+        l._expanded = map[l.Id] === true;
         applyExpanded(l.Children, map);
     });
 }
@@ -589,6 +597,7 @@ async function loadData(isAuto) {
             renderSidebar();
             if (prevId && getListById(rootData.Lists, prevId)) selectList(prevId);
             else if (rootData.Lists && rootData.Lists.length > 0) selectList(rootData.Lists[0].Id);
+            else selectList(ALL_GAMES_LIST_ID);
             document.getElementById('content-area').scrollTop = scrollTop;
             if (colorsChanged) markDirty();
         }
@@ -602,6 +611,7 @@ async function loadData(isAuto) {
 // List tree helpers
 // ──────────────────────────────────────────────
 function getListById(lists, id) {
+    if (id === ALL_GAMES_LIST_ID) return allGamesList;
     for (let l of lists) {
         if (l.Id === id) return l;
         if (l.Children && l.Children.length) { let f = getListById(l.Children, id); if (f) return f; }
@@ -705,6 +715,10 @@ function changeSortMode(value) {
     const list = getListById(rootData.Lists, currentListId);
     if (!list) return;
     list.SortOrder = value;
+    if (list.IsAutomatic) {
+        rootData.Settings ||= {};
+        rootData.Settings.AllGamesSortOrder = value;
+    }
     markDirty();
     selectList(currentListId, true);
 }
@@ -746,6 +760,7 @@ function moveListNode(dragId, targetId, mode) {
     const dragged = getListById(rootData.Lists, dragId);
     const target = getListById(rootData.Lists, targetId);
     if (!dragged || !target) return;
+    if (dragged.IsAutomatic || target.IsAutomatic) return;
 
     // Never allow moving a node into one of its descendants.
     let p = target;
@@ -779,7 +794,7 @@ function moveListNode(dragId, targetId, mode) {
         else siblings.splice(mode === 'after' ? targetIndex + 1 : targetIndex, 0, node);
     }
 
-    node._expanded = node._expanded !== false;
+    node._expanded = node._expanded === true;
     markDirty();
     clearListDragVisuals();
     renderSidebar();
@@ -805,10 +820,31 @@ function toggleSidebar() {
 }
 
 function renderSidebar() {
+    refreshAllGamesList();
     if (migrateTimelineLists(rootData.Lists || [])) markDirty();
     const c = document.getElementById('lists-container');
     c.innerHTML = '';
+    renderListGroup([allGamesList], c, true);
     renderListGroup(rootData.Lists || [], c, true);
+    updateAllListsButton();
+}
+
+function expandableLists(lists = rootData.Lists || []) {
+    return lists.flatMap(list => [...((list.Children || []).length ? [list] : []), ...expandableLists(list.Children || [])]);
+}
+function updateAllListsButton() {
+    const button = document.getElementById('lists-expand-toggle');
+    const lists = expandableLists();
+    const expanded = lists.length > 0 && lists.every(list => list._expanded === true);
+    button.textContent = expanded ? 'Recolher todas' : 'Expandir todas';
+    button.setAttribute('aria-expanded', String(expanded));
+    button.disabled = lists.length === 0;
+}
+function toggleAllLists() {
+    const lists = expandableLists();
+    const expand = !lists.every(list => list._expanded === true);
+    lists.forEach(list => { list._expanded = expand; });
+    renderSidebar();
 }
 
 function renderListGroup(lists, container, isRoot) {
@@ -816,7 +852,7 @@ function renderListGroup(lists, container, isRoot) {
     if (parent && listView(parent) === 'Timeline') lists = orderedTimelineChildren(parent);
     for (let list of lists) {
         const hasChildren = list.Children && list.Children.length > 0;
-        const isExpanded = list._expanded !== false;
+        const isExpanded = list._expanded === true;
 
         const item = document.createElement('div');
         item.className = 'list-item' + (currentListId === list.Id ? ' active' : '');
@@ -829,7 +865,7 @@ function renderListGroup(lists, container, isRoot) {
             <div class="list-name" title="${esc(list.Name)}">${esc(list.Name)}</div>
             <div class="list-count">${countGames(list)}</div>
         `;
-        item.draggable = cfgInteractionMode === 'drag';
+        item.draggable = cfgInteractionMode === 'drag' && !list.IsAutomatic;
         item.addEventListener('click', () => selectList(list.Id));
         item.addEventListener('contextmenu', e => { e.preventDefault(); showCtxMenu(e, list); });
 
@@ -856,7 +892,7 @@ function renderListGroup(lists, container, isRoot) {
             if (!fromId || !gid || draggedListId) return;
             const from = getListById(rootData.Lists, fromId);
             const to = getListById(rootData.Lists, list.Id);
-            if (!from || !to || normalizeSortMode(to.SortOrder) !== 'Manual') return;
+            if (!from || !to || to.IsAutomatic || normalizeSortMode(to.SortOrder) !== 'Manual') return;
             e.preventDefault();
             e.stopPropagation();
             moveGameToList(gid, from.Id, to.Id);
@@ -866,6 +902,7 @@ function renderListGroup(lists, container, isRoot) {
         });
 
         item.addEventListener('dragstart', e => {
+            if (list.IsAutomatic) { e.preventDefault(); return; }
             if (cfgInteractionMode !== 'drag') { e.preventDefault(); return; }
             draggedListId = list.Id;
             draggedListNode = list;
@@ -938,19 +975,21 @@ function renderListGroup(lists, container, isRoot) {
 function toggleExpand(id) {
     const list = getListById(rootData.Lists, id);
     if (!list) return;
-    list._expanded = list._expanded === false ? true : false;
+    list._expanded = list._expanded !== true;
     const el = document.getElementById(`children-${id}`);
     if (el) {
-        el.style.display = list._expanded === false ? 'none' : 'block';
+        el.style.display = list._expanded === true ? 'block' : 'none';
         const chevron = el.previousSibling && el.previousSibling.querySelector('.chevron');
-        if (chevron) chevron.classList.toggle('open', list._expanded !== false);
+        if (chevron) chevron.classList.toggle('open', list._expanded === true);
     }
+    updateAllListsButton();
 }
 
 // ──────────────────────────────────────────────
 // Context menu (right-click on list)
 // ──────────────────────────────────────────────
 function showCtxMenu(e, list) {
+    if (list.IsAutomatic) { document.getElementById('ctx-menu').style.display = 'none'; return; }
     e.stopPropagation();
     const menu = document.getElementById('ctx-menu');
     menu.innerHTML = '';
@@ -1004,6 +1043,7 @@ function showMoveMenu(e, list) {
 }
 
 function moveListInto(listId, targetParentId) {
+    if (listId === ALL_GAMES_LIST_ID || targetParentId === ALL_GAMES_LIST_ID) return;
     // Remove from current parent
     function removeFrom(lists) {
         for (let i = 0; i < lists.length; i++) {
@@ -1022,6 +1062,7 @@ function moveListInto(listId, targetParentId) {
 }
 
 function deleteListById(id) {
+    if (id === ALL_GAMES_LIST_ID) return;
     const node = getListById(rootData.Lists, id);
     const parent = findParent(rootData.Lists, id);
     if (Number.isInteger(node?.TimelineYear) && parent) { deleteTimelineYear(id); return; }
@@ -1119,7 +1160,7 @@ function updateTimelineEditOptions() {
 }
 function changeListView(view) {
     const list = getListById(rootData.Lists, currentListId);
-    if (!list || !['Grid', 'Tier', 'Timeline'].includes(view)) return;
+    if (!list || list.IsAutomatic || !['Grid', 'Tier', 'Timeline'].includes(view)) return;
     list.DefaultView = view;
     list.IsTier = view === 'Tier';
     cancelDoubleClickMove();
@@ -1127,6 +1168,7 @@ function changeListView(view) {
     selectList(list.Id, true);
 }
 function openCreateList(parentId = null) {
+    if (parentId === ALL_GAMES_LIST_ID) return;
     if (parentId && listView(getListById(rootData.Lists, parentId) || {}) === 'Timeline') { addTimelineYear(parentId); return; }
     openEditModal(null);
     creatingList = true;
@@ -1134,6 +1176,7 @@ function openCreateList(parentId = null) {
     document.getElementById('edit-name').focus();
 }
 function openEditModal(id) {
+    if (id === ALL_GAMES_LIST_ID) return;
     creatingList = !id;
     editingListId = id;
     const list = getListById(rootData.Lists, id) || { Name:'', HexColor:PALETTE[0], DefaultView:'Grid' };
@@ -1313,7 +1356,7 @@ function restoreTierScrollPositions(positions, revision = contentRenderRevision)
 
 function addTimelineYear(listId = currentListId) {
     const list = getListById(rootData.Lists, listId);
-    if (!list) return;
+    if (!list || list.IsAutomatic) return;
     const input = prompt('Ano da linha do tempo (1 a 9999):', String(new Date().getFullYear()));
     if (input === null) return;
     const year = Number(input);
@@ -1373,10 +1416,7 @@ function renderTimeline(list, area) {
         row.className = 'timeline-year' + (pending ? ' timeline-pending' : '');
         row.style.setProperty('--year-accent', /^#[0-9a-f]{6}$/i.test(child.HexColor) ? child.HexColor : '#66c7ed');
         const gamesClass = cfgTierLayout === 'HorizontalScroll' ? 'tier-games horizontal-scroll' : 'tier-games';
-        const actions = !pending ? `<div class="timeline-year-actions"><button type="button" data-edit-year="${child.Id}" aria-label="Editar ano ${child.TimelineYear}">✎ Editar</button><button type="button" data-delete-year="${child.Id}" aria-label="Excluir ano ${child.TimelineYear}">✕ Excluir</button></div>` : '';
-        row.innerHTML = `<div class="timeline-panel"><div class="timeline-year-heading"><div><h3>${pending ? 'Sem ano' : child.TimelineYear}</h3><small>${(child.GameIds || []).length} jogos</small></div>${actions}</div><div class="${gamesClass}" data-list-id="${child.Id}" data-year="${pending ? '' : child.TimelineYear}">${getSortedGameIds(child, list.SortOrder).map(generateCard).join('')}</div></div>`;
-        row.querySelector('[data-edit-year]')?.addEventListener('click', () => openEditModal(child.Id));
-        row.querySelector('[data-delete-year]')?.addEventListener('click', () => deleteTimelineYear(child.Id));
+        row.innerHTML = `<div class="timeline-panel"><div class="timeline-year-heading"><div><h3>${pending ? 'Sem ano' : child.TimelineYear}</h3><small>${(child.GameIds || []).length} jogos</small></div></div><div class="${gamesClass}" data-list-id="${child.Id}" data-year="${pending ? '' : child.TimelineYear}">${getSortedGameIds(child, list.SortOrder).map(generateCard).join('')}</div></div>`;
         track.appendChild(row);
     });
     scroll.appendChild(track);
@@ -1400,13 +1440,13 @@ function selectList(id, preserveSearch = false) {
     document.getElementById('main-header').style.visibility = 'visible';
     document.getElementById('header-title').textContent = list.Name;
     document.getElementById('header-color').style.background = list.HexColor || '#8B7CFF';
-    document.getElementById('header-count').textContent = `${countGames(list)} jogos`;
+    document.getElementById('header-count').textContent = `${countGames(list)} jogos${list.IsAutomatic ? ' · Biblioteca automática' : ''}`;
     const sortSelect = document.getElementById('sort-select');
     if (sortSelect) sortSelect.value = normalizeSortMode(list.SortOrder);
 
     const view = listView(list);
     document.getElementById('view-select').value = view;
-    document.getElementById('add-year').style.display = view === 'Timeline' ? '' : 'none';
+    document.getElementById('view-select').disabled = !!list.IsAutomatic;
     for (const key of ['order','orientation']) {
         const control = document.getElementById(`timeline-${key}`);
         control.style.display = view === 'Timeline' ? '' : 'none';
@@ -1470,9 +1510,10 @@ function moveGameToList(gid, fromId, toId) {
     const from = getListById(rootData.Lists, fromId);
     const to   = getListById(rootData.Lists, toId);
     if (!from || !to) return;
-    if (from.GameIds) from.GameIds = from.GameIds.filter(x => x !== gid);
+    if (to.IsAutomatic) return;
+    if (from.GameIds && !from.IsAutomatic) from.GameIds = from.GameIds.filter(x => x !== gid);
     if (!to.GameIds) to.GameIds = [];
-    to.GameIds.push(gid);
+    if (!to.GameIds.includes(gid)) to.GameIds.push(gid);
     markDirty();
     selectList(currentListId);
     requestAnimationFrame(updateTierHeaderWidth);
@@ -1642,6 +1683,7 @@ function startDoubleClickMove(card, e, pointerDrag = false) {
     const ghost = createClickMoveGhost(card);
     const r = card.getBoundingClientRect();
     clickMove = { id: card.dataset.id, sourceId, ghost, sourceCard: card, pointerDrag, copy:e.button === 2, width: r.width, height: r.height };
+    document.body.classList.toggle('automatic-game-drag', !!source.IsAutomatic);
     // A origem não encolhe enquanto a prévia muda de destino: isso deslocaria
     // todas as tiers abaixo e poderia limitar o scroll antes de terminar o arraste.
     clickMove.sourceRow = card.closest('.tier-row') || card.closest('.timeline-year');
@@ -1664,6 +1706,7 @@ function cancelDoubleClickMove() {
     clearClickMoveVisuals();
     if (clickMove.sourceRow) clickMove.sourceRow.style.minHeight = clickMove.sourceRowMinHeight;
     document.body.classList.remove('click-move-active');
+    document.body.classList.remove('automatic-game-drag');
     clickMove = null;
     cancelAnimationFrame(moveFrame);
     moveFrame = 0;
@@ -1674,7 +1717,7 @@ function getGameMoveTarget(x, y) {
     if (!clickMove) return null;
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
-    if (el.closest?.('#game-remove-zone')) return { region:'remove' };
+    if (el.closest?.('#game-remove-zone')) return clickMove.sourceId === ALL_GAMES_LIST_ID ? null : { region:'remove' };
 
     const card = el.closest ? el.closest('.game-card') : null;
     const sidebarItem = el.closest ? el.closest('.list-item') : null;
@@ -1683,14 +1726,14 @@ function getGameMoveTarget(x, y) {
     if (sidebarItem && !card) {
         const targetId = sidebarItem.dataset.listId;
         const target = getListById(rootData.Lists, targetId);
-        if (!target || targetId === clickMove.sourceId) return null;
+        if (!target || target.IsAutomatic || targetId === clickMove.sourceId) return null;
         return { toId: targetId, targetId: null, after: false, region: 'sidebar' };
     }
 
     if (!holder) return null;
     const toId = holder.dataset.listId;
     const to = getListById(rootData.Lists, toId);
-    if (!to) return null;
+    if (!to || to.IsAutomatic) return null;
     const slot = el.closest?.('.card-drop-slot');
     if (slot?.moveTarget) return slot.moveTarget;
 
@@ -1748,7 +1791,7 @@ function commitDoubleClickMove(target) {
     if (!clickMove || !target) return false;
     const from = getListById(rootData.Lists, clickMove.sourceId);
     if (target.region === 'remove') {
-        if (!from?.GameIds?.includes(clickMove.id)) return false;
+        if (from?.IsAutomatic || !from?.GameIds?.includes(clickMove.id)) return false;
         from.GameIds = from.GameIds.filter(id => id !== clickMove.id);
         if (from.TimelineYears) delete from.TimelineYears[clickMove.id];
         cancelDoubleClickMove();
@@ -1758,12 +1801,12 @@ function commitDoubleClickMove(target) {
         return true;
     }
     const to = getListById(rootData.Lists, target.toId);
-    if (!from || !to) return false;
+    if (!from || !to || to.IsAutomatic) return false;
     if (clickMove.id === target.targetId) return false;
     if (!from.GameIds?.includes(clickMove.id)) return false;
     if (target.targetId && !to.GameIds?.includes(target.targetId)) return false;
-    const copying = clickMove.copy && from !== to;
-    if (copying && !confirm(`Copiar "${gameName(clickMove.id)}" para a lista "${to.Name || ''}"?`)) return false;
+    const copying = from.IsAutomatic || (clickMove.copy && from !== to);
+    if (clickMove.copy && from !== to && !confirm(`Copiar "${gameName(clickMove.id)}" para a lista "${to.Name || ''}"?`)) return false;
     const displayed = getListById(rootData.Lists, currentListId);
     const grouped = displayed && ['Tier','Timeline'].includes(listView(displayed));
     const sortOwner = grouped ? displayed : to;
@@ -1806,7 +1849,10 @@ function initDoubleClickMove() {
 
     let pressed = null;
     let suppressTouchClick = false;
+    let suppressDragContextMenu = false;
     document.addEventListener('pointerdown', e => {
+        // A fresh pointer gesture re-enables ordinary list context menus.
+        suppressDragContextMenu = false;
         const tier = e.target.closest?.('.tier-games.horizontal-scroll') || e.target.closest?.('.timeline-horizontal');
         stopHorizontalAnimation(tier);
         if (cfgInteractionMode !== 'drag' || ![0, 2].includes(e.button) || clickMove) return;
@@ -1837,6 +1883,10 @@ function initDoubleClickMove() {
         if (Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) < 8) return;
         startDoubleClickMove(pressed.card, e, true);
         if (clickMove) clickMove.copy = pressed.event.button === 2;
+        if (clickMove?.copy) {
+            suppressDragContextMenu = true;
+            document.getElementById('ctx-menu').style.display = 'none';
+        }
     });
     document.addEventListener('pointerup', e => {
         if (!pressed || e.pointerId !== pressed.id) return;
@@ -1856,8 +1906,15 @@ function initDoubleClickMove() {
     document.addEventListener('pointercancel', () => { clearTimeout(pressed?.timer); pressed = null; if (clickMove?.pointerDrag) cancelDoubleClickMove(); });
     window.addEventListener('blur', () => { clearTimeout(pressed?.timer); pressed = null; cancelDoubleClickMove(); });
     document.addEventListener('contextmenu', e => {
+        // Browsers may emit this on the destination after pointerup and after
+        // the copy confirmation, when clickMove has already been cleared.
+        if (suppressDragContextMenu) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return;
+        }
         if (cfgInteractionMode === 'drag' && e.target.closest?.('#content-area .game-card')) e.preventDefault();
-    });
+    }, true);
 
     document.addEventListener('dblclick', e => {
         if (cfgInteractionMode !== 'double') return;
@@ -1987,7 +2044,9 @@ window.receivePlayniteData = data => {
     if (!playniteLocal || dirty || saving || clickMove) return;
     clearTimeout(saveWatchdog);
     document.getElementById('loading-indicator').style.display = 'none';
+    const expanded = collectExpanded(rootData.Lists || []);
     rootData = data;
+    applyExpanded(rootData.Lists || [], expanded);
     savedEditState = editState(data);
     hostStamp = data.UpdatedAt || 0;
     applySharedDisplaySettings(data.Settings || {});
@@ -1995,7 +2054,7 @@ window.receivePlayniteData = data => {
     (data.Games || []).forEach(g => gamesMap[g.Id] = g);
     applySettings();
     renderSidebar();
-    const id = getListById(data.Lists, currentListId)?.Id || data.Lists[0]?.Id;
+    const id = getListById(data.Lists, currentListId)?.Id || data.Lists[0]?.Id || ALL_GAMES_LIST_ID;
     if (id) selectList(id, true);
     else {
         currentListId = null;
